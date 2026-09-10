@@ -11,3 +11,4 @@ thiserror = "2.0"
 bytes = "1.10"
 tokio = { version = "1.43", features = ["sync", "macros", "rt"] }
 tracing = "0.1"
+serde = { version = "1.0.229", features = ["derive"] }
