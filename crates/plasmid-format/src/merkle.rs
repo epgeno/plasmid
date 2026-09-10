@@ -43,7 +43,7 @@ impl MerkleTree {
 
         let mut current = leaves.clone();
         while current.len() > 1 {
-            let mut next = Vec::with_capacity((current.len() + 1) / 2);
+            let mut next = Vec::with_capacity(current.len().div_ceil(2));
             for chunk in current.chunks(2) {
                 if chunk.len() == 2 {
                     next.push(hash_node(&chunk[0], &chunk[1]));

@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::header::{PlasmidHeader, DEFAULT_CHUNK_SIZE, HEADER_SIZE};
+use crate::header::{DEFAULT_CHUNK_SIZE, HEADER_SIZE, PlasmidHeader};
 use crate::index::{EntryType, PlasmidDirectory, PlasmidIndexEntry};
 use crate::merkle::MerkleTree;
 use std::io::Write;

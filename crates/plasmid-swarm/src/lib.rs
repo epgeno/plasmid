@@ -1,4 +1,4 @@
-use plasmid_format::{MerkleTree, HASH_SIZE};
+use plasmid_format::{HASH_SIZE, MerkleTree};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;

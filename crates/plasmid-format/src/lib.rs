@@ -7,9 +7,9 @@ pub mod reader;
 
 pub use builder::PlasmidBuilder;
 pub use error::{PlasmidFormatError, Result};
-pub use header::{PlasmidHeader, CURRENT_VERSION, DEFAULT_CHUNK_SIZE, HEADER_SIZE, PLASMID_MAGIC};
-pub use index::{EntryType, PlasmidDirectory, PlasmidIndexEntry, INDEX_ENTRY_SIZE};
-pub use merkle::{hash_leaf, hash_node, MerkleTree, HASH_SIZE};
+pub use header::{CURRENT_VERSION, DEFAULT_CHUNK_SIZE, HEADER_SIZE, PLASMID_MAGIC, PlasmidHeader};
+pub use index::{EntryType, INDEX_ENTRY_SIZE, PlasmidDirectory, PlasmidIndexEntry};
+pub use merkle::{HASH_SIZE, MerkleTree, hash_leaf, hash_node};
 pub use reader::PlasmidReader;
 
 #[cfg(test)]

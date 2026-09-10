@@ -5,10 +5,23 @@ edition.workspace = true
 license.workspace = true
 description = "Core genomic range-slicing and byte streaming engine for plasmid"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
+
 plasmid-format = { path = "../plasmid-format" }
 thiserror = "2.0"
 bytes = "1.10"
 noodles = { version = "0.113", features = ["core", "fasta", "fastq", "sam", "bam", "vcf"] }
 tokio = { version = "1.43", features = ["sync", "io-util"] }
 serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0"
+wasm-bindgen = { version = "0.2", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+js-sys = { version = "0.3", optional = true }
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen", "dep:js-sys"]
+

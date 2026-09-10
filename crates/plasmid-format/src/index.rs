@@ -104,7 +104,7 @@ impl PlasmidDirectory {
     }
 
     pub fn deserialize(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() % INDEX_ENTRY_SIZE != 0 {
+        if !bytes.len().is_multiple_of(INDEX_ENTRY_SIZE) {
             return Err(PlasmidFormatError::CorruptedIndex);
         }
 
@@ -134,7 +134,7 @@ impl PlasmidDirectory {
                 e.chrom_id == chrom_id
                     && e.start_pos <= end_pos
                     && e.end_pos >= start_pos
-                    && filter_type.map_or(true, |ft| e.entry_type == ft)
+                    && filter_type.is_none_or(|ft| e.entry_type == ft)
             })
             .copied()
             .collect()
