@@ -1,0 +1,15 @@
+# Rust
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Node / Web
+node_modules/
+dist/
+.DS_Store
+
+# Local Plasmid caches
+*.plasmid
+*.cram
+*.bam
+*.vcf.gz

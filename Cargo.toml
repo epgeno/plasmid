@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/plasmid-core",
+    "crates/plasmid-format",
+    "crates/plasmid-swarm",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+authors = ["epgeno <contact@epgeno.org>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/epgeno/plasmid"
+homepage = "https://plasmid.wiki"
