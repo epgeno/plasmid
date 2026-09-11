@@ -7,330 +7,293 @@ import {
   ShieldAlert,
   ArrowRightLeft,
   FileText,
-  Activity,
   ExternalLink,
   Radio,
   Scale,
-  Ban,
   Star,
-  Globe,
+  Lock,
 } from 'lucide-react'
 import {
   SupportedLanguage,
   TRANSLATIONS,
   LOCALIZED_PRESET_VARIANTS,
+  LocalizedVariant,
 } from './i18n'
 
 export default function App() {
   const [lang, setLang] = useState<SupportedLanguage>('ko')
   const [activeTab, setActiveTab] = useState<'stream' | 'liftover' | 'wiki' | 'swarm' | 'governance'>('stream')
-  const [selectedKey, setSelectedKey] = useState<string>('BRAF V600E')
+  const [selectedVariant, setSelectedVariant] = useState<string>('braf_v600e')
   const [simulateAdversarialDrift, setSimulateAdversarialDrift] = useState<boolean>(false)
-  const [kAnonymityMode, setKAnonymityMode] = useState<'single' | 'panel'>('panel')
-  const [isVerifying, setIsVerifying] = useState<boolean>(false)
+  const [verifying, setVerifying] = useState<boolean>(false)
   const [verifiedChunks, setVerifiedChunks] = useState<Record<number, boolean>>({
     64: true,
+    65: true,
     128: true,
+    129: true,
     192: true,
+    193: true,
   })
 
   const t = TRANSLATIONS[lang]
-  const current = LOCALIZED_PRESET_VARIANTS[selectedKey] || LOCALIZED_PRESET_VARIANTS['BRAF V600E']
+  const current: LocalizedVariant =
+    LOCALIZED_PRESET_VARIANTS.find((v) => v.id === selectedVariant) ?? LOCALIZED_PRESET_VARIANTS[0]
 
-  const handleVerifyMerkle = () => {
-    setIsVerifying(true)
+  const handleVerify = () => {
+    setVerifying(true)
     setTimeout(() => {
-      setIsVerifying(false)
-      setVerifiedChunks((prev) => {
-        const next = { ...prev }
-        current.chunks.forEach((c) => {
-          next[c] = true
-        })
-        return next
-      })
-    }, 450)
+      setVerifying(false)
+      setVerifiedChunks((prev) => ({
+        ...prev,
+        [current.chunks[0]]: true,
+        [current.chunks[1]]: true,
+      }))
+    }, 600)
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#ffffff', color: '#0f172a', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
-      {/* Top Disclaimer Banner */}
-      <div
-        style={{
-          backgroundColor: '#fef2f2',
-          borderBottom: '1px solid #fecaca',
-          padding: '8px 24px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          fontSize: '12px',
-          color: '#991b1b',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <ShieldAlert size={15} color="#dc2626" />
-          <span>
-            <strong>{t.disclaimer.bannerTitle}</strong> {t.disclaimer.bannerDesc}
+    <div style={{ minHeight: '100vh', backgroundColor: '#ffffff', color: '#0f172a', fontFamily: 'Pretendard, system-ui, sans-serif' }}>
+      {/* Top Professional Notice Banner */}
+      <div style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '8px 24px' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#475569' }}>
+            <span style={{ fontWeight: 700, color: '#0f172a' }}>{t.disclaimer.bannerTitle}:</span>
+            <span>{t.disclaimer.bannerDesc}</span>
+          </div>
+          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
+            {t.disclaimer.badgeLocal}
           </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11px', color: '#b91c1c' }}>
-          <span>{t.disclaimer.badgeLocal}</span>
         </div>
       </div>
 
       {/* Global Header */}
-      <header
-        style={{
-          borderBottom: '1px solid #e2e8f0',
-          padding: '14px 24px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '16px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <img src="/plasmid.svg" alt="Plasmid Logo" style={{ width: '28px', height: '28px' }} />
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <h1 style={{ fontSize: '18px', fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
-                Plasmid
-              </h1>
-              <span style={{ fontSize: '11px', fontWeight: 600, backgroundColor: '#f1f5f9', color: '#475569', padding: '2px 6px', borderRadius: '4px' }}>
-                v0.1.0-alpha
-              </span>
+      <header style={{ borderBottom: '1px solid #e2e8f0', padding: '16px 24px', backgroundColor: '#ffffff', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '34px', height: '34px', backgroundColor: '#2563eb', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Cpu size={20} color="#ffffff" />
             </div>
-            <p style={{ fontSize: '12px', color: '#64748b', margin: '2px 0 0 0' }}>
-              {t.header.subtitle}
-            </p>
-          </div>
-        </div>
-
-        {/* Global Navigation Tabs & Language Switcher */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button
-              onClick={() => setActiveTab('stream')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: '1px solid',
-                borderColor: activeTab === 'stream' ? '#0284c7' : '#e2e8f0',
-                backgroundColor: activeTab === 'stream' ? '#f0f9ff' : '#ffffff',
-                color: activeTab === 'stream' ? '#0284c7' : '#475569',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              <Layers size={14} /> {t.header.tabs.stream}
-            </button>
-            <button
-              onClick={() => setActiveTab('liftover')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: '1px solid',
-                borderColor: activeTab === 'liftover' ? '#0284c7' : '#e2e8f0',
-                backgroundColor: activeTab === 'liftover' ? '#f0f9ff' : '#ffffff',
-                color: activeTab === 'liftover' ? '#0284c7' : '#475569',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              <ArrowRightLeft size={14} /> {t.header.tabs.liftover}
-            </button>
-            <button
-              onClick={() => setActiveTab('wiki')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: '1px solid',
-                borderColor: activeTab === 'wiki' ? '#0284c7' : '#e2e8f0',
-                backgroundColor: activeTab === 'wiki' ? '#f0f9ff' : '#ffffff',
-                color: activeTab === 'wiki' ? '#0284c7' : '#475569',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              <FileText size={14} /> {t.header.tabs.wiki}
-            </button>
-            <button
-              onClick={() => setActiveTab('swarm')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: '1px solid',
-                borderColor: activeTab === 'swarm' ? '#0284c7' : '#e2e8f0',
-                backgroundColor: activeTab === 'swarm' ? '#f0f9ff' : '#ffffff',
-                color: activeTab === 'swarm' ? '#0284c7' : '#475569',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              <Radio size={14} /> {t.header.tabs.swarm}
-            </button>
-            <button
-              onClick={() => setActiveTab('governance')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: '1px solid',
-                borderColor: activeTab === 'governance' ? '#0284c7' : '#e2e8f0',
-                backgroundColor: activeTab === 'governance' ? '#f0f9ff' : '#ffffff',
-                color: activeTab === 'governance' ? '#0284c7' : '#475569',
-                fontSize: '13px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              <Scale size={14} /> {t.header.tabs.governance}
-            </button>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '18px', fontWeight: 800, letterSpacing: '-0.02em', color: '#0f172a' }}>
+                  {t.header.title}
+                </span>
+                <span style={{ fontSize: '10px', padding: '2px 6px', backgroundColor: '#eff6ff', color: '#2563eb', borderRadius: '4px', fontWeight: 700 }}>
+                  v0.1.0
+                </span>
+              </div>
+              <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
+                {t.header.subtitle}
+              </p>
+            </div>
           </div>
 
-          {/* Language Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '2px', backgroundColor: '#f8fafc' }}>
-            <Globe size={13} style={{ marginLeft: '4px', color: '#64748b' }} />
-            {(['ko', 'en', 'zh', 'ja'] as const).map((l) => (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            {/* Language Selector */}
+            <div style={{ display: 'flex', border: '1px solid #cbd5e1', borderRadius: '6px', overflow: 'hidden' }}>
+              {(['ko', 'en', 'zh', 'ja'] as const).map((l) => (
+                <button
+                  key={l}
+                  onClick={() => setLang(l)}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '12px',
+                    fontWeight: lang === l ? 700 : 500,
+                    backgroundColor: lang === l ? '#0f172a' : '#ffffff',
+                    color: lang === l ? '#ffffff' : '#64748b',
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {l.toUpperCase()}
+                </button>
+              ))}
+            </div>
+
+            {/* Navigation Tabs */}
+            <nav style={{ display: 'flex', gap: '4px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '8px' }}>
               <button
-                key={l}
-                onClick={() => setLang(l)}
+                onClick={() => setActiveTab('stream')}
                 style={{
-                  padding: '3px 8px',
-                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '13px',
+                  fontWeight: activeTab === 'stream' ? 700 : 500,
+                  backgroundColor: activeTab === 'stream' ? '#ffffff' : 'transparent',
+                  color: activeTab === 'stream' ? '#0f172a' : '#64748b',
                   border: 'none',
-                  backgroundColor: lang === l ? '#0f172a' : 'transparent',
-                  color: lang === l ? '#ffffff' : '#64748b',
-                  fontSize: '11px',
-                  fontWeight: lang === l ? 700 : 500,
+                  borderRadius: '6px',
+                  boxShadow: activeTab === 'stream' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
                 }}
               >
-                {l.toUpperCase()}
+                <Layers size={15} />
+                {t.header.tabs.viewer}
               </button>
-            ))}
+              <button
+                onClick={() => setActiveTab('liftover')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '13px',
+                  fontWeight: activeTab === 'liftover' ? 700 : 500,
+                  backgroundColor: activeTab === 'liftover' ? '#ffffff' : 'transparent',
+                  color: activeTab === 'liftover' ? '#0f172a' : '#64748b',
+                  border: 'none',
+                  borderRadius: '6px',
+                  boxShadow: activeTab === 'liftover' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                <ArrowRightLeft size={15} />
+                {t.header.tabs.liftover}
+              </button>
+              <button
+                onClick={() => setActiveTab('wiki')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '13px',
+                  fontWeight: activeTab === 'wiki' ? 700 : 500,
+                  backgroundColor: activeTab === 'wiki' ? '#ffffff' : 'transparent',
+                  color: activeTab === 'wiki' ? '#0f172a' : '#64748b',
+                  border: 'none',
+                  borderRadius: '6px',
+                  boxShadow: activeTab === 'wiki' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                <FileText size={15} />
+                {t.header.tabs.wiki}
+              </button>
+              <button
+                onClick={() => setActiveTab('swarm')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '13px',
+                  fontWeight: activeTab === 'swarm' ? 700 : 500,
+                  backgroundColor: activeTab === 'swarm' ? '#ffffff' : 'transparent',
+                  color: activeTab === 'swarm' ? '#0f172a' : '#64748b',
+                  border: 'none',
+                  borderRadius: '6px',
+                  boxShadow: activeTab === 'swarm' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                <Radio size={15} />
+                {t.header.tabs.network}
+              </button>
+              <button
+                onClick={() => setActiveTab('governance')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '13px',
+                  fontWeight: activeTab === 'governance' ? 700 : 500,
+                  backgroundColor: activeTab === 'governance' ? '#ffffff' : 'transparent',
+                  color: activeTab === 'governance' ? '#0f172a' : '#64748b',
+                  border: 'none',
+                  borderRadius: '6px',
+                  boxShadow: activeTab === 'governance' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                <Scale size={15} />
+                {t.header.tabs.sources}
+              </button>
+            </nav>
           </div>
         </div>
       </header>
 
       {/* Main Content Area */}
       <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
-        {/* Locus Selection Bar */}
-        <div
-          style={{
-            padding: '16px 20px',
-            borderRadius: '8px',
-            border: '1px solid #e2e8f0',
-            backgroundColor: '#f8fafc',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '24px',
-          }}
-        >
+        {/* Active Variant Selection Bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', padding: '16px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
           <div>
-            <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.04em' }}>
+            <span style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
               {t.locus.activeLocus}
             </span>
-            <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-              {Object.keys(LOCALIZED_PRESET_VARIANTS).map((key) => (
-                <button
-                  key={key}
-                  onClick={() => setSelectedKey(key)}
-                  style={{
-                    padding: '6px 14px',
-                    borderRadius: '4px',
-                    border: '1px solid',
-                    borderColor: selectedKey === key ? '#0f172a' : '#cbd5e1',
-                    backgroundColor: selectedKey === key ? '#0f172a' : '#ffffff',
-                    color: selectedKey === key ? '#ffffff' : '#334155',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {key}
-                </button>
-              ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+              <span style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>{current.label}</span>
+              <span style={{ fontSize: '12px', color: '#64748b', fontFamily: 'monospace' }}>
+                {current.chrom}:{current.pos} ({current.ref} &gt; {current.alt})
+              </span>
             </div>
           </div>
-
-          <div style={{ textAlign: 'right' }}>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
               {t.locus.targetBuild}
             </span>
+            <select
+              value={selectedVariant}
+              onChange={(e) => setSelectedVariant(e.target.value)}
+              style={{
+                padding: '8px 12px',
+                borderRadius: '6px',
+                border: '1px solid #cbd5e1',
+                fontSize: '13px',
+                backgroundColor: '#ffffff',
+                fontWeight: 600,
+                color: '#0f172a',
+                cursor: 'pointer',
+              }}
+            >
+              {LOCALIZED_PRESET_VARIANTS.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.gene} - {v.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
-        {/* Tab 1: Data Viewer (Range Slicing) */}
+        {/* TAB 1: Data Viewer (Range Slicing) */}
         {activeTab === 'stream' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            {/* Bandwidth Savings Card */}
-            <div
-              style={{
-                border: '1px solid #bfdbfe',
-                borderRadius: '8px',
-                padding: '20px',
-                backgroundColor: '#eff6ff',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Cpu size={20} color="#0284c7" />
-                  <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: '#0369a1' }}>
-                    {t.stream.cardTitle}
-                  </h3>
-                </div>
-                <p style={{ fontSize: '13px', color: '#0369a1', margin: '4px 0 0 0' }}>
-                  {t.stream.cardDesc}
-                </p>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: '11px', color: '#0369a1', fontWeight: 700, display: 'block' }}>
-                  {t.stream.metricLabel}
-                </span>
-                <span style={{ fontSize: '26px', fontWeight: 800, color: '#0284c7' }}>
-                  95.0%
-                </span>
-              </div>
-            </div>
-
-            {/* Slicing Inspection Panel */}
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+          <div>
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '20px', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                 <div>
-                  <h2 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>
-                    {current.gene} ({current.mutation})
+                  <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>
+                    {t.stream.title}
                   </h2>
-                  <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>
-                    {current.chrom}:{current.hg38Pos} • rs{current.rsid} • {current.ref}&gt;{current.alt}
+                  <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+                    {t.stream.desc}
                   </p>
                 </div>
-                {/* ClinVar Star Rating Badge */}
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, padding: '4px 8px', backgroundColor: '#eff6ff', color: '#2563eb', borderRadius: '4px' }}>
+                  {t.stream.savingsLabel}
+                </span>
+              </div>
+
+              {/* Variant Badge & Status */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', marginBottom: '20px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>{current.gene}</span>
+                    <span style={{ fontSize: '11px', padding: '2px 6px', backgroundColor: '#fee2e2', color: '#b91c1c', borderRadius: '4px', fontWeight: 700 }}>
+                      {current.significance}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                    {current.clinvarId} • {current.rsId}
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '2px', justifyContent: 'flex-end' }}>
                     {Array.from({ length: 4 }).map((_, i) => (
                       <Star
                         key={i}
@@ -347,22 +310,22 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Range Specs */}
+              {/* Data Range Specifications */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
                 <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>{t.stream.httpRange}</span>
+                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>{t.stream.dataRange}</span>
                   <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>{current.byteRange}</span>
                 </div>
                 <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>{t.stream.leafIndex}</span>
+                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>{t.stream.indexOffset}</span>
                   <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>
                     offset={current.leafOffset} len={current.leafLength}B
                   </span>
                 </div>
                 <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>{t.stream.targetChunks}</span>
+                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>{t.stream.dataBlocks}</span>
                   <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>
-                    #{current.chunks.join(', #')} (16KB)
+                    #{current.chunks.join(', #')}
                   </span>
                 </div>
                 <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
@@ -371,34 +334,34 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Merkle Verification Card */}
+              {/* Integrity Verification Card */}
               <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '16px', backgroundColor: '#f8fafc' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>{t.stream.merkleTitle}</span>
+                    <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>{t.stream.integrityTitle}</span>
                     <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>{current.merkleRoot}</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
                       <CheckCircle2 size={14} color="#16a34a" />
                       <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
-                        {verifiedChunks[current.chunks[0]] ? t.stream.merkleVerified : t.stream.merklePending}
+                        {verifiedChunks[current.chunks[0]] ? t.stream.verified : t.stream.pending}
                       </span>
                     </div>
                   </div>
                   <button
-                    onClick={handleVerifyMerkle}
-                    disabled={isVerifying}
+                    onClick={handleVerify}
+                    disabled={verifying}
                     style={{
                       padding: '6px 14px',
-                      backgroundColor: '#0284c7',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '4px',
                       fontSize: '12px',
                       fontWeight: 600,
-                      cursor: 'pointer',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      cursor: verifying ? 'default' : 'pointer',
+                      color: '#0f172a',
                     }}
                   >
-                    {isVerifying ? t.stream.verifyingBtn : t.stream.reverifyBtn}
+                    {verifying ? t.stream.verifyingBtn : t.stream.verifyBtn}
                   </button>
                 </div>
               </div>
@@ -406,477 +369,428 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 2: Assembly Liftover */}
+        {/* TAB 2: Assembly Liftover */}
         {activeTab === 'liftover' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>
-                    {t.liftover.title}
-                  </h3>
-                  <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>
-                    {t.liftover.desc}
-                  </p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <label style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={simulateAdversarialDrift}
-                      onChange={(e) => setSimulateAdversarialDrift(e.target.checked)}
-                    />
-                    <span style={{ fontWeight: 600, color: simulateAdversarialDrift ? '#dc2626' : '#475569' }}>
-                      {t.liftover.simulateDrift}
-                    </span>
-                  </label>
-                </div>
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+              <div>
+                <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>
+                  {t.liftover.title}
+                </h2>
+                <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+                  {t.liftover.desc}
+                </p>
               </div>
 
-              {/* Status Report */}
-              {simulateAdversarialDrift ? (
-                <div
-                  style={{
-                    border: '1px solid #fecaca',
-                    borderRadius: '6px',
-                    padding: '16px',
-                    backgroundColor: '#fef2f2',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    marginBottom: '20px',
-                  }}
-                >
-                  <ShieldAlert size={24} color="#dc2626" />
-                  <div>
-                    <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#991b1b', margin: 0 }}>
-                      {t.liftover.driftDetectedTitle}
-                    </h4>
-                    <p style={{ fontSize: '12px', color: '#b91c1c', margin: '2px 0 0 0' }}>
-                      {t.liftover.driftDetectedDesc}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  style={{
-                    border: '1px solid #bbf7d0',
-                    borderRadius: '6px',
-                    padding: '16px',
-                    backgroundColor: '#f0fdf4',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    marginBottom: '20px',
-                  }}
-                >
-                  <ShieldCheck size={24} color="#16a34a" />
-                  <div>
-                    <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#166534', margin: 0 }}>
-                      {t.liftover.verifiedTitle}
-                    </h4>
-                    <p style={{ fontSize: '12px', color: '#15803d', margin: '2px 0 0 0' }}>
-                      {t.liftover.verifiedDesc} (hg19:{current.hg19Pos} ➔ hg38:{current.hg38Pos})
-                    </p>
-                  </div>
-                </div>
-              )}
+              {/* Safe simulation toggle */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px' }}>
+                <input
+                  type="checkbox"
+                  checked={simulateAdversarialDrift}
+                  onChange={(e) => setSimulateAdversarialDrift(e.target.checked)}
+                />
+                <span style={{ fontWeight: 600, color: simulateAdversarialDrift ? '#dc2626' : '#64748b' }}>
+                  {t.liftover.testToggle}
+                </span>
+              </label>
+            </div>
 
-              {/* Liftover Transformation Table */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
-                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>{t.liftover.sourceBuild}</span>
-                  <span style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'monospace' }}>
-                    GRCh37 / hg19
-                  </span>
-                  <span style={{ fontSize: '12px', display: 'block', marginTop: '4px', color: '#475569' }}>
-                    {current.chrom}:{simulateAdversarialDrift ? current.hg19Pos + 1 : current.hg19Pos}
-                  </span>
+            {/* Status Alert */}
+            {simulateAdversarialDrift ? (
+              <div style={{ padding: '16px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <ShieldAlert size={18} color="#dc2626" style={{ marginTop: '2px' }} />
+                  <div>
+                    <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 700, color: '#991b1b' }}>
+                      {t.liftover.warningTitle}
+                    </h3>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#b91c1c' }}>
+                      {t.liftover.warningDesc}
+                    </p>
+                  </div>
                 </div>
-                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>{t.liftover.delta}</span>
-                  <span style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'monospace', color: '#0284c7' }}>
-                    +{current.hg38Pos - current.hg19Pos} bp
-                  </span>
-                  <span style={{ fontSize: '12px', display: 'block', marginTop: '4px', color: '#64748b' }}>
-                    {t.liftover.deltaNote}
-                  </span>
+              </div>
+            ) : (
+              <div style={{ padding: '16px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <ShieldCheck size={18} color="#16a34a" style={{ marginTop: '2px' }} />
+                  <div>
+                    <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: 700, color: '#166534' }}>
+                      {t.liftover.verifiedTitle}
+                    </h3>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#15803d' }}>
+                      {t.liftover.verifiedDesc}
+                    </p>
+                  </div>
                 </div>
-                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>{t.liftover.targetBuild}</span>
-                  <span style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'monospace', color: '#16a34a' }}>
-                    GRCh38 / hg38
-                  </span>
-                  <span style={{ fontSize: '12px', display: 'block', marginTop: '4px', color: '#475569' }}>
-                    {current.chrom}:{current.hg38Pos}
-                  </span>
-                </div>
+              </div>
+            )}
+
+            {/* Coordinate Comparison Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '20px', alignItems: 'center' }}>
+              <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#f8fafc' }}>
+                <span style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '4px' }}>
+                  {t.liftover.sourceBuild}
+                </span>
+                <span style={{ fontSize: '16px', fontWeight: 700, fontFamily: 'monospace' }}>
+                  {current.chrom}:{simulateAdversarialDrift ? current.hg19Pos + 1 : current.hg19Pos}
+                </span>
+                <span style={{ fontSize: '11px', color: '#64748b', display: 'block', marginTop: '4px' }}>
+                  Alleles: {current.ref} &gt; {current.alt}
+                </span>
+              </div>
+
+              <div style={{ textAlign: 'center' }}>
+                <ArrowRightLeft size={20} color="#64748b" />
+                <span style={{ fontSize: '11px', color: '#64748b', display: 'block', marginTop: '4px' }}>
+                  {t.liftover.delta}: {Math.abs(current.pos - current.hg19Pos).toLocaleString()} bp
+                </span>
+              </div>
+
+              <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#f8fafc' }}>
+                <span style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '4px' }}>
+                  {t.liftover.targetBuild}
+                </span>
+                <span style={{ fontSize: '16px', fontWeight: 700, fontFamily: 'monospace' }}>
+                  {current.chrom}:{current.pos}
+                </span>
+                <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, display: 'block', marginTop: '4px' }}>
+                  {t.liftover.deltaNote}
+                </span>
               </div>
             </div>
           </div>
         )}
 
-        {/* Tab 3: Clinical Notes */}
+        {/* TAB 3: Clinical Notes & Knowledge Wiki */}
         {activeTab === 'wiki' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
-                <div>
-                  <h2 style={{ fontSize: '22px', fontWeight: 700, margin: 0 }}>
-                    {current.gene} {current.mutation}
-                  </h2>
-                  <p style={{ fontSize: '14px', color: '#64748b', margin: '4px 0 0 0' }}>
-                    {t.wiki.reference}: rs{current.rsid} • {t.wiki.clinicalSignificance}:{' '}
-                    <span style={{ fontWeight: 700, color: '#dc2626' }}>{current.clinvar}</span>
-                  </p>
-                </div>
-                {/* ClinVar Star Badge */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#fef9c3', padding: '6px 12px', borderRadius: '6px', border: '1px solid #fef08a' }}>
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <Star
-                      key={i}
-                      size={16}
-                      fill={i < current.stars ? '#ca8a04' : 'none'}
-                      color={i < current.stars ? '#ca8a04' : '#cbd5e1'}
-                    />
-                  ))}
-                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#854d0e', marginLeft: '6px' }}>
-                    {current.stars} / 4 {t.stream.stars} ({current.reviewStatus[lang]})
-                  </span>
-                </div>
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+            <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: '#0f172a' }}>
+                  {current.label}
+                </h2>
+                <span style={{ fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>
+                  {t.wiki.reference}: {current.clinvarId}
+                </span>
               </div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: '#fee2e2', color: '#991b1b', borderRadius: '4px', fontWeight: 600 }}>
+                  {current.significance}
+                </span>
+                <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: '#f1f5f9', color: '#475569', borderRadius: '4px', fontWeight: 600 }}>
+                  dbSNP: {current.rsId}
+                </span>
+                <span style={{ fontSize: '11px', padding: '2px 8px', backgroundColor: '#f1f5f9', color: '#475569', borderRadius: '4px', fontWeight: 600 }}>
+                  MIM: {current.omimId}
+                </span>
+              </div>
+            </div>
 
-              {/* ACMG Criteria Tags */}
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
-                {current.acmg.map((tag) => (
+            {/* Note Text */}
+            <div style={{ lineHeight: '1.6', fontSize: '14px', color: '#334155', marginBottom: '24px' }}>
+              <p>{current.notes[lang]}</p>
+            </div>
+
+            {/* ACMG Tags */}
+            <div style={{ marginBottom: '24px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '8px' }}>
+                {t.wiki.acmgCriteria}
+              </span>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {current.acmgTags.map((tag) => (
                   <span
                     key={tag}
                     style={{
+                      fontSize: '11px',
                       padding: '4px 8px',
+                      backgroundColor: '#eff6ff',
+                      color: '#1d4ed8',
+                      border: '1px solid #bfdbfe',
                       borderRadius: '4px',
-                      border: '1px solid #cbd5e1',
-                      backgroundColor: '#f8fafc',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      fontFamily: 'monospace',
+                      fontWeight: 700,
                     }}
                   >
                     {tag}
                   </span>
                 ))}
               </div>
-
-              {/* Clinical Description */}
-              <div style={{ marginBottom: '24px', lineHeight: 1.7, fontSize: '14px', color: '#334155' }}>
-                <p>{current.notes[lang]}</p>
-              </div>
-
-              {/* Literature Citations */}
-              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <h4 style={{ fontSize: '14px', fontWeight: 700, margin: 0 }}>
-                    {t.wiki.citationsTitle}
-                  </h4>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>
-                    {t.wiki.citationsNote}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {current.pubmed.map((p) => (
-                    <a
-                      key={p.id}
-                      href={`https://pubmed.ncbi.nlm.nih.gov/${p.id}/`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        padding: '10px 14px',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: '6px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        textDecoration: 'none',
-                        color: 'inherit',
-                        backgroundColor: '#ffffff',
-                      }}
-                    >
-                      <span style={{ fontSize: '13px', fontWeight: 500 }}>
-                        {p.title} ({p.year})
-                      </span>
-                      <span style={{ fontSize: '12px', color: '#0284c7', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        PMID:{p.id} <ExternalLink size={13} />
-                      </span>
-                    </a>
-                  ))}
-                </div>
-              </div>
             </div>
-          </div>
-        )}
 
-        {/* Tab 4: P2P Network */}
-        {activeTab === 'swarm' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>{t.swarm.title}</h3>
-                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '4px' }}>
-                    {t.swarm.desc}
-                  </p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Activity size={18} color="#16a34a" />
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#16a34a' }}>{t.swarm.activeTopics}</span>
-                </div>
+            {/* Scientific Citations */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>
+                  {t.wiki.citationsTitle}
+                </span>
+                <span style={{ fontSize: '11px', color: '#64748b' }}>{t.wiki.citationsNote}</span>
               </div>
-
-              {/* Hotspot Annotation Packs List */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
-                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#0284c7', marginBottom: '4px' }}>
-                    {t.swarm.packClinvar}
-                  </div>
-                  <div style={{ fontSize: '18px', fontWeight: 700 }}>~50 MB</div>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                    12 {t.swarm.peerStats}
-                  </div>
-                </div>
-
-                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#0284c7', marginBottom: '4px' }}>
-                    {t.swarm.packAcmg}
-                  </div>
-                  <div style={{ fontSize: '18px', fontWeight: 700 }}>~15 MB</div>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                    34 {t.swarm.peerStats}
-                  </div>
-                </div>
-
-                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#0284c7', marginBottom: '4px' }}>
-                    {t.swarm.packCpic}
-                  </div>
-                  <div style={{ fontSize: '18px', fontWeight: 700 }}>~5 MB</div>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                    18 {t.swarm.peerStats}
-                  </div>
-                </div>
-              </div>
-
-              {/* Privacy Protection Card */}
-              <div style={{ padding: '20px', borderRadius: '6px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', marginBottom: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <div>
-                    <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', margin: 0 }}>
-                      {t.swarm.privacyTitle}
-                    </h4>
-                    <p style={{ fontSize: '12px', color: '#64748b', margin: '2px 0 0 0' }}>
-                      {t.swarm.privacyDesc}
-                    </p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      onClick={() => setKAnonymityMode('single')}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '4px',
-                        border: '1px solid',
-                        borderColor: kAnonymityMode === 'single' ? '#dc2626' : '#cbd5e1',
-                        backgroundColor: kAnonymityMode === 'single' ? '#fef2f2' : '#ffffff',
-                        color: kAnonymityMode === 'single' ? '#dc2626' : '#475569',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {t.swarm.btnSingle}
-                    </button>
-                    <button
-                      onClick={() => setKAnonymityMode('panel')}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '4px',
-                        border: '1px solid',
-                        borderColor: kAnonymityMode === 'panel' ? '#16a34a' : '#cbd5e1',
-                        backgroundColor: kAnonymityMode === 'panel' ? '#f0fdf4' : '#ffffff',
-                        color: kAnonymityMode === 'panel' ? '#16a34a' : '#475569',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {t.swarm.btnCoarse}
-                    </button>
-                  </div>
-                </div>
-
-                {kAnonymityMode === 'single' ? (
-                  <div style={{ padding: '12px 16px', borderRadius: '4px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Ban size={18} color="#dc2626" />
-                    <div>
-                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#991b1b', display: 'block' }}>
-                        {t.swarm.privacyBlockedTitle}
-                      </span>
-                      <span style={{ fontSize: '12px', color: '#b91c1c' }}>
-                        {t.swarm.privacyBlockedDesc}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ padding: '12px 16px', borderRadius: '4px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <ShieldCheck size={18} color="#16a34a" />
-                    <div>
-                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#166534', display: 'block' }}>
-                        {t.swarm.privacyActiveTitle}
-                      </span>
-                      <span style={{ fontSize: '12px', color: '#15803d' }}>
-                        {t.swarm.privacyActiveDesc}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Data Integrity Status */}
-              <div style={{ padding: '16px', borderRadius: '6px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', marginBottom: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <ShieldCheck size={18} color="#16a34a" />
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
-                        {t.swarm.byzantineTitle}
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#64748b' }}>
-                        {t.swarm.byzantineDesc}
-                      </div>
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#16a34a', backgroundColor: '#dcfce7', padding: '4px 8px', borderRadius: '4px' }}>
-                    {t.swarm.airgapBadge}
-                  </span>
-                </div>
-              </div>
-
-              {/* Peers List */}
-              <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '8px' }}>
-                {t.swarm.activePeersTitle}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {[
-                  { id: 'peer-tokyo-01', rtt: '14ms', up: '2.4 MB/s', state: t.swarm.peerStateSeeding },
-                  { id: 'peer-seoul-09', rtt: '22ms', up: '3.1 MB/s', state: t.swarm.peerStateSeeding },
-                  { id: 'peer-frankfurt-03', rtt: '48ms', up: '1.2 MB/s', state: t.swarm.peerStateVerifying },
-                ].map((p) => (
-                  <div
-                    key={p.id}
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                {current.pmids.map((pmid) => (
+                  <a
+                    key={pmid}
+                    href={`https://pubmed.ncbi.nlm.nih.gov/${pmid}/`}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     style={{
-                      padding: '12px 16px',
-                      borderRadius: '6px',
-                      border: '1px solid #e2e8f0',
-                      backgroundColor: '#ffffff',
                       display: 'flex',
-                      justifyContent: 'space-between',
                       alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '12px',
+                      color: '#2563eb',
+                      textDecoration: 'none',
+                      padding: '6px 10px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
+                      backgroundColor: '#ffffff',
                     }}
                   >
-                    <span style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'monospace' }}>{p.id}</span>
-                    <span style={{ fontSize: '12px', color: '#64748b' }}>RTT: {p.rtt}</span>
-                    <span style={{ fontSize: '12px', color: '#64748b' }}>Rate: {p.up}</span>
-                    <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 500 }}>{p.state}</span>
-                  </div>
+                    <span>PMID: {pmid}</span>
+                    <ExternalLink size={12} />
+                  </a>
                 ))}
               </div>
             </div>
           </div>
         )}
 
-        {/* Tab 5: Data Sources & Privacy Architecture */}
-        {activeTab === 'governance' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '6px' }}>
-                {t.governance.title}
-              </h3>
-              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '24px' }}>
-                {t.governance.desc}
-              </p>
+        {/* TAB 4: P2P Network */}
+        {activeTab === 'swarm' && (
+          <div>
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+                <div>
+                  <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>
+                    {t.swarm.title}
+                  </h2>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+                    {t.swarm.desc}
+                  </p>
+                </div>
+                <span style={{ fontSize: '12px', fontWeight: 700, padding: '4px 8px', backgroundColor: '#f0fdf4', color: '#16a34a', borderRadius: '4px' }}>
+                  {t.swarm.peerStats}
+                </span>
+              </div>
 
+              {/* Active Clinical Panels */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                <div style={{ padding: '14px', border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#f8fafc' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', display: 'block' }}>
+                    {t.swarm.packClinvar}
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                    52.4 MB • 14,820 variants
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, display: 'block', marginTop: '6px' }}>
+                    ● 8 peers seeding
+                  </span>
+                </div>
+
+                <div style={{ padding: '14px', border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#f8fafc' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', display: 'block' }}>
+                    {t.swarm.packAcmg}
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                    38.1 MB • 8,450 variants
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, display: 'block', marginTop: '6px' }}>
+                    ● 6 peers seeding
+                  </span>
+                </div>
+
+                <div style={{ padding: '14px', border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#f8fafc' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', display: 'block' }}>
+                    {t.swarm.packCpic}
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                    24.6 MB • 3,210 variants
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, display: 'block', marginTop: '6px' }}>
+                    ● 5 peers seeding
+                  </span>
+                </div>
+              </div>
+
+              {/* Privacy Protection Card */}
+              <div style={{ padding: '16px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Lock size={16} color="#2563eb" />
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                      {t.swarm.privacyTitle}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563eb', backgroundColor: '#eff6ff', padding: '2px 8px', borderRadius: '4px' }}>
+                    {t.swarm.privacyBadge}
+                  </span>
+                </div>
+                <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
+                  {t.swarm.privacyDesc}
+                </p>
+                <div style={{ marginTop: '12px', padding: '10px 14px', backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#15803d' }}>
+                    ✓ {t.swarm.privacyStatusTitle}
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#475569', display: 'block', marginTop: '2px' }}>
+                    {t.swarm.privacyStatusDesc}
+                  </span>
+                </div>
+              </div>
+
+              {/* Integrity Protection Card */}
+              <div style={{ padding: '16px', backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                      {t.swarm.integrityTitle}
+                    </span>
+                    <span style={{ fontSize: '12px', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                      {t.swarm.integrityDesc}
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#16a34a', backgroundColor: '#f0fdf4', padding: '4px 8px', borderRadius: '4px' }}>
+                    {t.swarm.airgapBadge}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Active Nodes List */}
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '20px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '12px' }}>
+                {t.swarm.activePeersTitle}
+              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', backgroundColor: '#f8fafc', borderRadius: '6px', fontSize: '12px' }}>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>node_us_east_8f2a</span>
+                  <span style={{ color: '#16a34a', fontWeight: 600 }}>● {t.swarm.peerStateSharing} (52.4 MB)</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', backgroundColor: '#f8fafc', borderRadius: '6px', fontSize: '12px' }}>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>node_ap_ne2_41d9</span>
+                  <span style={{ color: '#16a34a', fontWeight: 600 }}>● {t.swarm.peerStateSharing} (38.1 MB)</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', backgroundColor: '#f8fafc', borderRadius: '6px', fontSize: '12px' }}>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>node_eu_west_c3e1</span>
+                  <span style={{ color: '#2563eb', fontWeight: 600 }}>◐ {t.swarm.peerStateVerifying}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5: Data Sources & Privacy Architecture */}
+        {activeTab === 'governance' && (
+          <div>
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px', marginBottom: '24px' }}>
+              <div style={{ marginBottom: '20px' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>
+                  {t.governance.title}
+                </h2>
+                <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+                  {t.governance.desc}
+                </p>
+              </div>
+
+              {/* 4-Tier Cards */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px' }}>
-                <div style={{ padding: '16px', border: '1px solid #bbf7d0', borderRadius: '6px', backgroundColor: '#f0fdf4' }}>
+                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#f8fafc' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#166534' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
                       {t.governance.tier1Title}
                     </span>
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#16a34a', backgroundColor: '#dcfce7', padding: '2px 6px', borderRadius: '4px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#16a34a', backgroundColor: '#f0fdf4', padding: '2px 6px', borderRadius: '4px' }}>
                       {t.governance.tier1Status}
                     </span>
                   </div>
-                  <p style={{ fontSize: '12px', color: '#15803d', margin: 0, lineHeight: 1.5 }}>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#64748b', lineHeight: '1.5' }}>
                     {t.governance.tier1Desc}
                   </p>
                 </div>
 
-                <div style={{ padding: '16px', border: '1px solid #bfdbfe', borderRadius: '6px', backgroundColor: '#eff6ff' }}>
+                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#f8fafc' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#1e40af' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
                       {t.governance.tier2Title}
                     </span>
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#2563eb', backgroundColor: '#dbeafe', padding: '2px 6px', borderRadius: '4px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563eb', backgroundColor: '#eff6ff', padding: '2px 6px', borderRadius: '4px' }}>
                       {t.governance.tier2Status}
                     </span>
                   </div>
-                  <p style={{ fontSize: '12px', color: '#1d4ed8', margin: 0, lineHeight: 1.5 }}>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#64748b', lineHeight: '1.5' }}>
                     {t.governance.tier2Desc}
                   </p>
                 </div>
 
                 <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#f8fafc' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
                       {t.governance.tier3Title}
                     </span>
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', backgroundColor: '#e2e8f0', padding: '2px 6px', borderRadius: '4px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }}>
                       {t.governance.tier3Status}
                     </span>
                   </div>
-                  <p style={{ fontSize: '12px', color: '#475569', margin: 0, lineHeight: 1.5 }}>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#64748b', lineHeight: '1.5' }}>
                     {t.governance.tier3Desc}
                   </p>
                 </div>
 
-                <div style={{ padding: '16px', border: '1px solid #fed7aa', borderRadius: '6px', backgroundColor: '#fff7ed' }}>
+                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#f8fafc' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#9a3412' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
                       {t.governance.tier4Title}
                     </span>
-                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#ea580c', backgroundColor: '#ffedd5', padding: '2px 6px', borderRadius: '4px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#16a34a', backgroundColor: '#f0fdf4', padding: '2px 6px', borderRadius: '4px' }}>
                       {t.governance.tier4Status}
                     </span>
                   </div>
-                  <p style={{ fontSize: '12px', color: '#c2410c', margin: 0, lineHeight: 1.5 }}>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#64748b', lineHeight: '1.5' }}>
                     {t.governance.tier4Desc}
                   </p>
                 </div>
               </div>
 
-              {/* Official Attributions & Research Statement */}
-              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
-                <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#475569', marginBottom: '10px' }}>
+              {/* Official Attributions */}
+              <div style={{ padding: '16px', backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px', marginBottom: '16px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '8px' }}>
                   {t.governance.attributionsTitle}
-                </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px', color: '#64748b', lineHeight: 1.6 }}>
-                  <div>{t.governance.gnomadAttr}</div>
-                  <div>{t.governance.cpicAttr}</div>
-                  <div style={{ marginTop: '8px', color: '#94a3b8', fontSize: '11px' }}>
-                    {t.governance.regulatoryNotice}
-                  </div>
-                </div>
+                </span>
+                <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '12px', color: '#475569', lineHeight: '1.7' }}>
+                  <li>{t.governance.gnomadAttr}</li>
+                  <li>{t.governance.cpicAttr}</li>
+                </ul>
+              </div>
+
+              {/* Statement */}
+              <div style={{ padding: '14px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '4px' }}>
+                  {t.governance.statementTitle}
+                </span>
+                <p style={{ margin: 0, fontSize: '12px', color: '#64748b', lineHeight: '1.5' }}>
+                  {t.governance.statementDesc}
+                </p>
               </div>
             </div>
           </div>
         )}
       </main>
+
+      {/* Global Footer */}
+      <footer style={{ borderTop: '1px solid #e2e8f0', padding: '24px', backgroundColor: '#ffffff', marginTop: '40px' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#64748b' }}>
+          <div>
+            <span>© 2026 EntropyParadox Genomics. Open-source under MIT / Apache-2.0.</span>
+          </div>
+          <div style={{ display: 'flex', gap: '16px' }}>
+            <a href="https://github.com/epgeno/plasmid" target="_blank" rel="noopener noreferrer" style={{ color: '#64748b', textDecoration: 'none' }}>
+              GitHub
+            </a>
+            <a href="https://plasmid.wiki" target="_blank" rel="noopener noreferrer" style={{ color: '#64748b', textDecoration: 'none' }}>
+              plasmid.wiki
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }
