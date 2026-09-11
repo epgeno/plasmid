@@ -96,6 +96,7 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 * [**RFC-0001: .plasmid Single-Container Archive Format**](docs/rfc/0001-container-spec.md): Specification for the PMTiles-like single container packaging genomic indices, 16KB Merkle chunks, and interleaved reference blocks.
 * [**RFC-0002: Privacy, Air-Gap Isolation & Byzantine Defense**](docs/rfc/0002-privacy-and-airgap-isolation.md): Threat modeling, local-first sandbox architecture, and coordinate drift mitigation.
+* [**RFC-0003: Biomedical Data Licensing, IP Governance & Swarm Privacy Safeguards**](docs/rfc/0003-data-licensing-and-governance.md): Public domain whitelisting, proprietary DB exclusion, ODbL copyleft isolation, and k-anonymity coarse pack swarming.
 
 ---
 
