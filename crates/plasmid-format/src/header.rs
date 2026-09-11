@@ -135,13 +135,15 @@ mod tests {
 
     #[test]
     fn test_header_roundtrip() {
-        let mut header = PlasmidHeader::default();
-        header.reference_build = "T2T-CHM13v2".to_string();
-        header.root_hash = [0xab; 32];
-        header.total_chunks = 42;
-        header.total_payload_bytes = 42 * 16384;
-        header.index_offset = 128;
-        header.index_length = 1024;
+        let header = PlasmidHeader {
+            reference_build: "T2T-CHM13v2".to_string(),
+            root_hash: [0xab; 32],
+            total_chunks: 42,
+            total_payload_bytes: 42 * 16384,
+            index_offset: 128,
+            index_length: 1024,
+            ..Default::default()
+        };
 
         let serialized = header.serialize();
         assert_eq!(serialized.len(), 128);

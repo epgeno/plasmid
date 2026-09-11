@@ -1,0 +1,41 @@
+name: "Feature Request / RFC"
+description: "Suggest an idea, optimization, or architecture enhancement for Plasmid."
+title: "[FEAT]: "
+labels: ["enhancement", "discussion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We welcome proposals for expanding Plasmid's streaming capabilities, formats, and wiki curation!
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a problem or limitation? Please describe.
+      placeholder: "e.g., I'm frustrated when requesting large BAMs because..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed Solution
+      description: Describe your proposed solution or API change.
+      placeholder: "e.g., Implement 2-level hierarchical leaf directories as specified in RFC-0001 section 4..."
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or features you've considered.
+  - type: dropdown
+    id: impact_area
+    attributes:
+      label: Scope of Impact
+      options:
+        - "Client UI / UX"
+        - "Rust Core / Protocol"
+        - "Binary Container Schema (Requires formal RFC)"
+        - "Security / Privacy Sandbox"
+    validations:
+      required: true

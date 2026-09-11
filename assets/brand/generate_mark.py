@@ -149,7 +149,7 @@ def build_plasmid_mark_svg():
     return svg
 
 if __name__ == "__main__":
-    out_dir = "/home/cycorld/projects/plasmid/assets/brand"
+    out_dir = os.path.dirname(os.path.abspath(__file__))
     svg_content = build_plasmid_mark_svg()
     svg_path = os.path.join(out_dir, "plasmid-mark.svg")
     with open(svg_path, "w", encoding="utf-8") as f:

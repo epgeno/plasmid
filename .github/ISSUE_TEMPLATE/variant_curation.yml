@@ -1,0 +1,43 @@
+name: "Genomic Variant Curation Discrepancy"
+description: "Report an outdated ClinVar tier, coordinate mapping mismatch, or literature citation gap."
+title: "[CURATION]: "
+labels: ["curation", "genomics", "clinvar"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Plasmid protects clinical truth through rigorous verification. Use this form to report discrepancies with NCBI ClinVar or new peer-reviewed literature.
+  - type: input
+    id: gene_variant
+    attributes:
+      label: Gene & Variant Identifier
+      placeholder: "e.g., BRAF V600E / rs113488022"
+    validations:
+      required: true
+  - type: input
+    id: coordinates
+    attributes:
+      label: Genomic Coordinates & Build
+      placeholder: "e.g., GRCh38 chr7:140453136 T>A (or hg19 chr7:140753336)"
+    validations:
+      required: true
+  - type: textarea
+    id: literature
+    attributes:
+      label: PubMed Citations & Evidentiary Literature
+      description: Provide PMIDs and DOI links demonstrating why this variant interpretation should be updated.
+      placeholder: "e.g., PMID: 12068308, PMID: 22818981"
+    validations:
+      required: true
+  - type: dropdown
+    id: clinical_tier
+    attributes:
+      label: Proposed ClinVar / ACMG Classification
+      options:
+        - "Pathogenic"
+        - "Likely Pathogenic"
+        - "Uncertain Significance (VUS)"
+        - "Likely Benign"
+        - "Benign"
+    validations:
+      required: true

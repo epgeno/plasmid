@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "Community Discussions"
+    url: "https://github.com/epgeno/plasmid/discussions"
+    about: "Ask questions, share ideas, and discuss decentralized genomics architecture."
+  - name: "Security & Vulnerability Reporting"
+    url: "https://github.com/epgeno/plasmid/security/advisories/new"
+    about: "Privately disclose sensitive security or personal data leak vulnerabilities."

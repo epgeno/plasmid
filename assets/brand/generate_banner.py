@@ -180,7 +180,7 @@ def build_horizontal_banner_svg():
     return svg
 
 if __name__ == "__main__":
-    out_dir = "/home/cycorld/projects/plasmid/assets/brand"
+    out_dir = os.path.dirname(os.path.abspath(__file__))
     banner_svg = build_horizontal_banner_svg()
     banner_path = os.path.join(out_dir, "plasmid-banner.svg")
     with open(banner_path, "w", encoding="utf-8") as f:

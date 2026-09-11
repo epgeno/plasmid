@@ -124,13 +124,13 @@ mod tests {
         let root = tree.root();
         assert_ne!(root, [0u8; 32]);
 
-        for i in 0..7 {
+        for (i, chunk) in chunks.iter().enumerate().take(7) {
             let proof = tree.proof(i).expect("Proof should exist");
-            let valid = MerkleTree::verify_chunk(&chunks[i], &root, &proof);
+            let valid = MerkleTree::verify_chunk(chunk, &root, &proof);
             assert!(valid, "Chunk {i} failed verification");
 
             // Tamper test
-            let mut tampered = chunks[i].clone();
+            let mut tampered = chunk.clone();
             tampered[0] ^= 0xff;
             let invalid = MerkleTree::verify_chunk(&tampered, &root, &proof);
             assert!(!invalid, "Tampered chunk {i} should fail");

@@ -1,0 +1,62 @@
+name: "Bug Report"
+description: "Report a reproducible defect, crash, or decoding error in Plasmid."
+title: "[BUG]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a problem! Please ensure you are not submitting confidential personal genomic data.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which part of the Plasmid stack is experiencing the issue?
+      options:
+        - "crates/plasmid-format (Container & Merkle Index)"
+        - "crates/plasmid-core (Range Slicing & noodles)"
+        - "crates/plasmid-swarm (WebRTC P2P Exchange)"
+        - "apps/web (React 19 Web Viewer)"
+        - "Documentation / RFC"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: "e.g., When requesting bytes for chr7:140453136, Merkle verification fails with invalid hash..."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Exact commands or browser actions to trigger the defect.
+      placeholder: |
+        1. Run `cargo test -p plasmid-core`
+        2. Execute query with coordinates...
+        3. See error
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment & Versions
+      description: OS version, Rust toolchain, Node version, Browser engine.
+      placeholder: "e.g., Linux x86_64, Rust 1.84.0, Chrome 134, pnpm 9"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Terminal Output
+      description: Please paste backtraces or browser console errors (sanitize any private paths).
+      render: shell
+  - type: checkboxes
+    id: sanitization-check
+    attributes:
+      label: Privacy & Sanitization Confirmation
+      options:
+        - label: "I confirm that this report contains NO private, non-consensual personal genomic sequence data (WGS/VCF)."
+          required: true

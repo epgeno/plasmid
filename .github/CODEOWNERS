@@ -1,0 +1,11 @@
+# Global owners
+* @cycorld
+
+# Rust Workspace Crates
+/crates/ @cycorld
+
+# Web Applications & UI
+/apps/web/ @cycorld
+
+# Binary Specifications & Security Architecture
+/docs/rfc/ @cycorld

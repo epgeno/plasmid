@@ -1,0 +1,21 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 0 * * 1' # Weekly on Mondays
+
+jobs:
+  cargo-audit:
+    name: Cargo Security Advisory Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Run Cargo Audit
+        run: cargo audit

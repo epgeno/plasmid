@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use Plasmid in your academic research, please cite it as below."
+authors:
+  - name: "epgeno contributors"
+title: "Plasmid: Decentralized Genomic Wiki & Merkle Range Slicing Engine"
+version: 0.1.0-alpha
+date-released: 2026-09-11
+url: "https://plasmid.wiki"
+repository-code: "https://github.com/epgeno/plasmid"
+license: "MIT OR Apache-2.0"
+keywords:
+  - "genomics"
+  - "bioinformatics"
+  - "peer-to-peer"
+  - "merkle-tree"
+  - "bep52"
+  - "range-slicing"
+  - "cram"
+  - "vcf"
