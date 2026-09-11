@@ -90,14 +90,6 @@ pnpm dev
 ```
 브라우저에서 [http://localhost:5173](http://localhost:5173)으로 접속합니다.
 
-### 3. 빌드 벤치마크 및 결과물 용량 확인
-
-컴파일 시간과 빌드 결과물/부산물 용량을 측정합니다:
-
-```bash
-./scripts/build-metrics.sh
-```
-
 ---
 
 ## 📜 RFC 공식 규격서
