@@ -1,8 +1,8 @@
 use crate::error::Result;
 use crate::header::{DEFAULT_CHUNK_SIZE, FLAG_HIERARCHICAL_INDEX, HEADER_SIZE, PlasmidHeader};
 use crate::index::{
-    EntryType, PlasmidDirectory, PlasmidIndexEntry, PlasmidLeafPointer, PlasmidRootDirectory,
-    INDEX_LEAF_POINTER_SIZE,
+    EntryType, INDEX_LEAF_POINTER_SIZE, PlasmidDirectory, PlasmidIndexEntry, PlasmidLeafPointer,
+    PlasmidRootDirectory,
 };
 use crate::merkle::MerkleTree;
 use std::io::Write;
@@ -193,7 +193,9 @@ impl PlasmidBuilder {
                 && (current_partition.len() >= entries_per_leaf
                     || current_partition.last().unwrap().chrom_id != entry.chrom_id)
             {
-                leaf_dirs.push(PlasmidDirectory::new(std::mem::take(&mut current_partition)));
+                leaf_dirs.push(PlasmidDirectory::new(std::mem::take(
+                    &mut current_partition,
+                )));
             }
             current_partition.push(entry);
         }

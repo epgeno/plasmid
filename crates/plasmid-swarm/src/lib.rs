@@ -1,8 +1,6 @@
 pub mod pack;
 
-pub use pack::{
-    PackCategory, PackManifest, PackSwarm, SelectiveSwarmManager,
-};
+pub use pack::{PackCategory, PackManifest, PackSwarm, SelectiveSwarmManager};
 
 use plasmid_format::{HASH_SIZE, MerkleTree};
 use serde::{Deserialize, Serialize};
@@ -286,16 +284,13 @@ mod tests {
         );
 
         // 2. Transparent Fallback to Cloudflare R2 / S3 Origin with Merkle verification
-        let resolved_data = manager.resolve_chunk_with_fallback(
-            "pack-acmg-81",
-            0,
-            |origin_url, chunk_idx| {
+        let resolved_data =
+            manager.resolve_chunk_with_fallback("pack-acmg-81", 0, |origin_url, chunk_idx| {
                 assert_eq!(origin_url, "https://origin.plasmid.wiki/packs/acmg.plasmid");
                 assert_eq!(chunk_idx, 0);
                 // Simulated origin return with valid data & proof
                 Ok((chunk_data.clone(), valid_proof.clone()))
-            },
-        );
+            });
 
         assert!(resolved_data.is_ok(), "Origin fallback must succeed");
         let resolved = resolved_data.unwrap();
@@ -304,6 +299,8 @@ mod tests {
         // Verify chunk is now in local cache
         let pack_swarm = manager.packs.get("pack-acmg-81").unwrap();
         assert!(pack_swarm.engine.has_chunk(0));
-        println!("[Adversarial Defense Verified] Banned malicious peer and successfully recovered via Origin fallback");
+        println!(
+            "[Adversarial Defense Verified] Banned malicious peer and successfully recovered via Origin fallback"
+        );
     }
 }

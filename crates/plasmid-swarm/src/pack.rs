@@ -200,7 +200,10 @@ impl SelectiveSwarmManager {
         }
 
         // 2. Check if a peer has the chunk
-        let peer_candidate = swarm.engine.select_best_peer_for_chunk(chunk_index).cloned();
+        let peer_candidate = swarm
+            .engine
+            .select_best_peer_for_chunk(chunk_index)
+            .cloned();
 
         if let Some(_peer) = peer_candidate {
             // In a live system, this sends WebRTC RequestChunk.
@@ -218,7 +221,10 @@ impl SelectiveSwarmManager {
         }
 
         // Cache locally to seed back into P2P network
-        swarm.engine.local_cache.insert(chunk_index, origin_data.clone());
+        swarm
+            .engine
+            .local_cache
+            .insert(chunk_index, origin_data.clone());
         Ok(origin_data)
     }
 }

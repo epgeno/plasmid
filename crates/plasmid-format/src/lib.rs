@@ -203,7 +203,11 @@ mod tests {
         // Adversarial check:
         // A client targeting ONLY chr14:50000-60000 must query root directory and inspect leaf pointers
         let pointers = reader.query_leaf_pointers(14, 50000, 60000);
-        assert_eq!(pointers.len(), 1, "Must hit exactly 1 target leaf directory");
+        assert_eq!(
+            pointers.len(),
+            1,
+            "Must hit exactly 1 target leaf directory"
+        );
 
         let target_leaf = pointers[0];
         // Leaf size for 10 entries is 10 * 32 bytes = 320 bytes

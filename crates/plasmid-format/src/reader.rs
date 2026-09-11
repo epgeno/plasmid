@@ -1,5 +1,5 @@
 use crate::error::{PlasmidFormatError, Result};
-use crate::header::{PlasmidHeader, FLAG_HIERARCHICAL_INDEX};
+use crate::header::{FLAG_HIERARCHICAL_INDEX, PlasmidHeader};
 use crate::index::{
     EntryType, PlasmidDirectory, PlasmidIndexEntry, PlasmidLeafPointer, PlasmidRootDirectory,
 };

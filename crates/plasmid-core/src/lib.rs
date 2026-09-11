@@ -13,8 +13,8 @@ pub use decoder::{
 };
 pub use error::{PlasmidCoreError, Result};
 pub use liftover::{
-    AnchorSnp, CoordinateGuard, GenomeBuild, LiftoverEngine, LiftoverInterval, LiftoverResult,
-    CURATED_ANCHOR_SNPS,
+    AnchorSnp, CURATED_ANCHOR_SNPS, CoordinateGuard, GenomeBuild, LiftoverEngine, LiftoverInterval,
+    LiftoverResult,
 };
 pub use slicing::{ByteRange, RangePlanner, SlicingPlan, coalesce_byte_ranges};
 #[cfg(feature = "wasm")]
@@ -68,14 +68,8 @@ mod tests {
         let mut reader = PlasmidReader::new(cursor).unwrap();
 
         // 1. Planning test
-        let plan = RangePlanner::plan_reader(
-            &mut reader,
-            "chr7",
-            140453136,
-            140453136,
-            None,
-        )
-        .unwrap();
+        let plan =
+            RangePlanner::plan_reader(&mut reader, "chr7", 140453136, 140453136, None).unwrap();
 
         assert_eq!(plan.chrom_id, 7);
         assert!(!plan.chunk_indices.is_empty());

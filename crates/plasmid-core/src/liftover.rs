@@ -1,7 +1,5 @@
 use crate::chrom::{chrom_to_id, id_to_chrom};
-use crate::error::{
-    CoordinateDriftDetails, PlasmidCoreError, Result, UnmappedCoordinateDetails,
-};
+use crate::error::{CoordinateDriftDetails, PlasmidCoreError, Result, UnmappedCoordinateDetails};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -272,7 +270,9 @@ impl LiftoverEngine {
                 let lifted_pos = inv.dst_start + offset;
                 let gene_hint = CURATED_ANCHOR_SNPS
                     .iter()
-                    .find(|a| a.chrom_id == chrom_id && (a.hg19_pos as i64 - pos as i64).abs() < 100_000)
+                    .find(|a| {
+                        a.chrom_id == chrom_id && (a.hg19_pos as i64 - pos as i64).abs() < 100_000
+                    })
                     .map(|a| a.gene.to_string());
 
                 Ok(LiftoverResult {
@@ -319,7 +319,9 @@ impl LiftoverEngine {
                 let lifted_pos = inv.src_start + offset;
                 let gene_hint = CURATED_ANCHOR_SNPS
                     .iter()
-                    .find(|a| a.chrom_id == chrom_id && (a.hg38_pos as i64 - pos as i64).abs() < 100_000)
+                    .find(|a| {
+                        a.chrom_id == chrom_id && (a.hg38_pos as i64 - pos as i64).abs() < 100_000
+                    })
                     .map(|a| a.gene.to_string());
 
                 Ok(LiftoverResult {
@@ -354,9 +356,9 @@ mod tests {
     fn test_anchor_snp_build_detection() {
         // User variant set from 23andMe (hg19)
         let hg19_user_file = vec![
-            ("chr7".to_string(), 140453136),  // BRAF V600E (hg19)
-            ("chr11".to_string(), 5248232),   // HBB rs334 (hg19)
-            ("chr17".to_string(), 7577538),   // TP53 rs28934578 (hg19)
+            ("chr7".to_string(), 140453136), // BRAF V600E (hg19)
+            ("chr11".to_string(), 5248232),  // HBB rs334 (hg19)
+            ("chr17".to_string(), 7577538),  // TP53 rs28934578 (hg19)
         ];
 
         let detected = CoordinateGuard::detect_build(&hg19_user_file);
@@ -408,8 +410,8 @@ mod tests {
             "rs113488022",
             "chr7",
             140453136,
-            "A",                      // user claims base is 'A'
-            mock_grch38_reference,    // but GRCh38 has 'C' at offset 0
+            "A",                   // user claims base is 'A'
+            mock_grch38_reference, // but GRCh38 has 'C' at offset 0
             140453136,
             GenomeBuild::GRCh38,
         );
