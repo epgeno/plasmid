@@ -1,7 +1,8 @@
 use crate::chrom::chrom_to_id;
 use crate::error::{PlasmidCoreError, Result};
-use plasmid_format::{EntryType, PlasmidDirectory, PlasmidIndexEntry};
+use plasmid_format::{EntryType, PlasmidDirectory, PlasmidIndexEntry, PlasmidReader};
 use serde::{Deserialize, Serialize};
+use std::io::{Read, Seek};
 
 /// HTTP Byte Range for Cloudflare R2 / S3 requests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,28 +92,17 @@ pub struct SlicingPlan {
 pub struct RangePlanner;
 
 impl RangePlanner {
-    /// Generates an optimized SlicingPlan for a given genomic coordinate query.
-    pub fn plan_slice(
-        directory: &PlasmidDirectory,
-        chrom_name: &str,
+    /// Generates an optimized SlicingPlan from raw index entries.
+    pub fn plan_from_entries(
+        entries: &[PlasmidIndexEntry],
+        chrom_id: u16,
         start_pos: u64,
         end_pos: u64,
-        entry_type: Option<EntryType>,
         payload_start_offset: u64,
         chunk_size: u32,
     ) -> Result<SlicingPlan> {
-        if start_pos > end_pos {
-            return Err(PlasmidCoreError::InvalidCoordinateRange {
-                start: start_pos,
-                end: end_pos,
-            });
-        }
-
-        let chrom_id = chrom_to_id(chrom_name)?;
-        let entries = directory.query_range(chrom_id, start_pos, end_pos, entry_type);
-
         let mut chunk_set = Vec::new();
-        for entry in &entries {
+        for entry in entries {
             for c in 0..entry.chunk_count {
                 chunk_set.push(entry.chunk_start + c);
             }
@@ -142,10 +132,70 @@ impl RangePlanner {
             end_pos,
             chunk_indices: chunk_set,
             byte_ranges,
-            entries,
+            entries: entries.to_vec(),
             total_chunk_bytes,
             total_download_bytes,
         })
+    }
+
+    /// Generates an optimized SlicingPlan for a given genomic coordinate query against a flat directory.
+    pub fn plan_slice(
+        directory: &PlasmidDirectory,
+        chrom_name: &str,
+        start_pos: u64,
+        end_pos: u64,
+        entry_type: Option<EntryType>,
+        payload_start_offset: u64,
+        chunk_size: u32,
+    ) -> Result<SlicingPlan> {
+        if start_pos > end_pos {
+            return Err(PlasmidCoreError::InvalidCoordinateRange {
+                start: start_pos,
+                end: end_pos,
+            });
+        }
+
+        let chrom_id = chrom_to_id(chrom_name)?;
+        let entries = directory.query_range(chrom_id, start_pos, end_pos, entry_type);
+        Self::plan_from_entries(
+            &entries,
+            chrom_id,
+            start_pos,
+            end_pos,
+            payload_start_offset,
+            chunk_size,
+        )
+    }
+
+    /// Generates an optimized SlicingPlan directly from a PlasmidReader, supporting both flat and 2-stage hierarchical indices.
+    pub fn plan_reader<R: Read + Seek>(
+        reader: &mut PlasmidReader<R>,
+        chrom_name: &str,
+        start_pos: u64,
+        end_pos: u64,
+        entry_type: Option<EntryType>,
+    ) -> Result<SlicingPlan> {
+        if start_pos > end_pos {
+            return Err(PlasmidCoreError::InvalidCoordinateRange {
+                start: start_pos,
+                end: end_pos,
+            });
+        }
+
+        let chrom_id = chrom_to_id(chrom_name)?;
+        let entries = reader
+            .query_range(chrom_id, start_pos, end_pos, entry_type)
+            .map_err(PlasmidCoreError::Format)?;
+        let payload_offset = reader.header.metadata_offset + reader.header.metadata_length;
+
+        Self::plan_from_entries(
+            &entries,
+            chrom_id,
+            start_pos,
+            end_pos,
+            payload_offset,
+            reader.header.chunk_size,
+        )
     }
 }
 

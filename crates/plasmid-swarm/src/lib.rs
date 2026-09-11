@@ -1,3 +1,9 @@
+pub mod pack;
+
+pub use pack::{
+    PackCategory, PackManifest, PackSwarm, SelectiveSwarmManager,
+};
+
 use plasmid_format::{HASH_SIZE, MerkleTree};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -16,6 +22,15 @@ pub enum SwarmError {
 
     #[error("Handshake root mismatch: expected {expected}, got {received}")]
     RootMismatch { expected: String, received: String },
+
+    #[error("Pack not found: {0}")]
+    PackNotFound(String),
+
+    #[error("Peer banned for Byzantine malicious behavior: {0}")]
+    PeerBanned(String),
+
+    #[error("Origin HTTP fetch failed: {0}")]
+    OriginFetchFailed(String),
 }
 
 pub type Result<T> = std::result::Result<T, SwarmError>;
@@ -173,5 +188,122 @@ mod tests {
             "Corrupted piece must fail Merkle check"
         );
         assert!(!engine.has_chunk(1));
+    }
+
+    #[test]
+    fn test_selective_hotspot_pack_routing() {
+        let mut manager = SelectiveSwarmManager::new();
+
+        let clinvar_manifest = PackManifest::new(
+            "pack-clinvar-2026",
+            "ClinVar Pathogenic Variants",
+            PackCategory::ClinVarPathogenic,
+            [0x11; HASH_SIZE],
+            100,
+            vec!["BRCA1".to_string(), "BRCA2".to_string(), "TP53".to_string()],
+            "https://origin.plasmid.wiki/packs/clinvar.plasmid",
+        );
+
+        let pharmacogenomics_manifest = PackManifest::new(
+            "pack-pharm-2026",
+            "CPIC Pharmacogenomics",
+            PackCategory::Pharmacogenomics,
+            [0x22; HASH_SIZE],
+            25,
+            vec!["CYP2D6".to_string(), "CYP2C19".to_string()],
+            "https://origin.plasmid.wiki/packs/pharm.plasmid",
+        );
+
+        manager.register_pack(clinvar_manifest);
+        manager.register_pack(pharmacogenomics_manifest);
+
+        // Query BRCA1: routes only to ClinVar pack
+        let brca1_packs = manager.find_packs_for_gene("BRCA1");
+        assert_eq!(brca1_packs.len(), 1);
+        assert_eq!(brca1_packs[0].pack_id, "pack-clinvar-2026");
+
+        // Query CYP2D6: routes only to CPIC pack
+        let cyp_packs = manager.find_packs_for_gene("CYP2D6");
+        assert_eq!(cyp_packs.len(), 1);
+        assert_eq!(cyp_packs[0].pack_id, "pack-pharm-2026");
+
+        // Query non-hotspot gene: returns empty without swarming full 100Gb
+        let junk_gene_packs = manager.find_packs_for_gene("OR4F5");
+        assert!(junk_gene_packs.is_empty());
+    }
+
+    #[test]
+    fn test_adversarial_byzantine_peer_banning_and_origin_fallback() {
+        // Prepare valid data for pack
+        let chunk_data = vec![0x42u8; DEFAULT_CHUNK_SIZE as usize];
+        let slices = [&chunk_data[..]];
+        let tree = MerkleTree::from_chunks(&slices);
+        let valid_proof = tree.proof(0).unwrap();
+
+        let manifest = PackManifest::new(
+            "pack-acmg-81",
+            "ACMG Secondary Findings v3.2",
+            PackCategory::AcmgSecondaryFindings,
+            tree.root(),
+            1,
+            vec!["BRCA1".to_string()],
+            "https://origin.plasmid.wiki/packs/acmg.plasmid",
+        );
+
+        let mut manager = SelectiveSwarmManager::new();
+        manager.register_pack(manifest);
+
+        // Register malicious peer
+        manager
+            .subscribe_peer_to_pack("pack-acmg-81", "malicious-peer-x", 10)
+            .unwrap();
+
+        // 1. Adversarial Attack: Malicious peer sends corrupted chunk payload
+        let mut corrupted_chunk = chunk_data.clone();
+        corrupted_chunk[0] ^= 0xbb; // Bit-flip
+
+        let ingest_res = manager.ingest_peer_chunk(
+            "pack-acmg-81",
+            "malicious-peer-x",
+            0,
+            corrupted_chunk,
+            &valid_proof,
+        );
+
+        assert!(
+            matches!(ingest_res, Err(SwarmError::MerkleVerificationFailed(0))),
+            "Corrupted chunk must fail Merkle check"
+        );
+
+        // Verify malicious peer was immediately banned
+        assert!(manager.banned_peers.contains("malicious-peer-x"));
+
+        // Malicious peer attempts to reconnect or send more data -> rejected with PeerBanned
+        let reconnect_res = manager.subscribe_peer_to_pack("pack-acmg-81", "malicious-peer-x", 10);
+        assert!(
+            matches!(reconnect_res, Err(SwarmError::PeerBanned(_))),
+            "Banned peer must be rejected on connection attempt"
+        );
+
+        // 2. Transparent Fallback to Cloudflare R2 / S3 Origin with Merkle verification
+        let resolved_data = manager.resolve_chunk_with_fallback(
+            "pack-acmg-81",
+            0,
+            |origin_url, chunk_idx| {
+                assert_eq!(origin_url, "https://origin.plasmid.wiki/packs/acmg.plasmid");
+                assert_eq!(chunk_idx, 0);
+                // Simulated origin return with valid data & proof
+                Ok((chunk_data.clone(), valid_proof.clone()))
+            },
+        );
+
+        assert!(resolved_data.is_ok(), "Origin fallback must succeed");
+        let resolved = resolved_data.unwrap();
+        assert_eq!(resolved, chunk_data);
+
+        // Verify chunk is now in local cache
+        let pack_swarm = manager.packs.get("pack-acmg-81").unwrap();
+        assert!(pack_swarm.engine.has_chunk(0));
+        println!("[Adversarial Defense Verified] Banned malicious peer and successfully recovered via Origin fallback");
     }
 }

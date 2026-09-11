@@ -4,6 +4,8 @@ use wasm_bindgen::prelude::*;
 #[cfg(feature = "wasm")]
 use crate::decoder::{AnnotationDecoder, FastaDecoder, VcfDecoder};
 #[cfg(feature = "wasm")]
+use crate::liftover::{CoordinateGuard, GenomeBuild, LiftoverEngine};
+#[cfg(feature = "wasm")]
 use crate::slicing::RangePlanner;
 #[cfg(feature = "wasm")]
 use plasmid_format::{PlasmidDirectory, hash_leaf};
@@ -107,6 +109,35 @@ impl PlasmidWasmEngine {
     pub fn free_buffer(ptr: *mut u8, size: usize) {
         unsafe {
             let _ = Vec::from_raw_parts(ptr, 0, size);
+        }
+    }
+
+    /// Realtime Liftover of GRCh37 (hg19) coordinate to GRCh38 (hg38) in WebAssembly.
+    #[wasm_bindgen]
+    pub fn liftover_hg19_to_hg38(
+        chrom: &str,
+        pos: f64,
+        ref_allele: &str,
+    ) -> std::result::Result<JsValue, JsValue> {
+        let engine = LiftoverEngine::new_with_curated_regions();
+        let result = engine
+            .lift_hg19_to_hg38(chrom, pos as u64, ref_allele)
+            .map_err(|e| JsValue::from_str(&format!("Liftover error: {e}")))?;
+
+        serde_wasm_bindgen::to_value(&result)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {e}")))
+    }
+
+    /// Automatically detects genome build (GRCh37 vs GRCh38) from input variant coordinates.
+    #[wasm_bindgen]
+    pub fn detect_build(variants_json: &str) -> std::result::Result<String, JsValue> {
+        let variants: Vec<(String, u64)> = serde_json::from_str(variants_json)
+            .map_err(|e| JsValue::from_str(&format!("JSON parse error: {e}")))?;
+
+        match CoordinateGuard::detect_build(&variants) {
+            Some(GenomeBuild::GRCh37) => Ok("GRCh37".to_string()),
+            Some(GenomeBuild::GRCh38) => Ok("GRCh38".to_string()),
+            None => Ok("Unknown".to_string()),
         }
     }
 }

@@ -5,6 +5,7 @@ pub const PLASMID_MAGIC: &[u8; 8] = b"PLASMID\x01";
 pub const HEADER_SIZE: usize = 128;
 pub const CURRENT_VERSION: u16 = 1;
 pub const DEFAULT_CHUNK_SIZE: u32 = 16 * 1024; // 16,384 bytes (BitTorrent v2 BEP 52)
+pub const FLAG_HIERARCHICAL_INDEX: u16 = 0x0001;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlasmidHeader {
