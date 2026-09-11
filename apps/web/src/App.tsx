@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import {
   Share2,
-  Disc,
   Cpu,
   Layers,
   CheckCircle2,
@@ -128,7 +127,7 @@ export default function App() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Disc size={22} color="#0f172a" fill="none" />
+          <img src="/plasmid.svg" alt="Plasmid Logo" style={{ width: '24px', height: '24px', display: 'block' }} />
           <span style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '-0.02em' }}>PLASMID</span>
           <span
             style={{
