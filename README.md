@@ -90,6 +90,14 @@ pnpm dev
 ```
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
+### 3. Build Telemetry & Artifact Size Inspection
+
+Inspect exact compilation times and artifact size footprints:
+
+```bash
+./scripts/build-metrics.sh
+```
+
 ---
 
 ## 📜 RFC Specifications
