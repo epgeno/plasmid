@@ -6,6 +6,7 @@ Cargo.lock
 # Node / Web
 node_modules/
 dist/
+*.tsbuildinfo
 .DS_Store
 
 # Local Plasmid caches
