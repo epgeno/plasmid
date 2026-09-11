@@ -1,6 +1,7 @@
 pub mod chrom;
 pub mod decoder;
 pub mod error;
+pub mod governance;
 pub mod liftover;
 pub mod slicing;
 pub mod wasm;
@@ -12,6 +13,10 @@ pub use decoder::{
     GenomicCoordinator, UnifiedGenomicSlice, VcfDecoder, VcfVariantRecord,
 };
 pub use error::{PlasmidCoreError, Result};
+pub use governance::{
+    DataGovernanceGuard, GNOMAD_MANDATORY_ATTRIBUTION, LicenseType, MANDATORY_MEDICAL_DISCLAIMER,
+    SubmitterStarRating,
+};
 pub use liftover::{
     AnchorSnp, CURATED_ANCHOR_SNPS, CoordinateGuard, GenomeBuild, LiftoverEngine, LiftoverInterval,
     LiftoverResult,

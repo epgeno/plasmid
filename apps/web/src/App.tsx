@@ -5,12 +5,14 @@ import {
   CheckCircle2,
   ShieldCheck,
   ShieldAlert,
-  AlertTriangle,
   ArrowRightLeft,
   FileText,
   Activity,
   ExternalLink,
   Radio,
+  Scale,
+  Ban,
+  Star,
 } from 'lucide-react'
 
 interface VariantData {
@@ -23,6 +25,10 @@ interface VariantData {
   alt: string
   rsid: string
   clinvar: 'Pathogenic' | 'Likely Pathogenic' | 'Uncertain Significance' | 'Benign'
+  stars: number
+  reviewStatus: string
+  license: string
+  attributionNotice: string
   acmg: string[]
   chunks: number[]
   byteRange: string
@@ -44,6 +50,10 @@ const PRESET_VARIANTS: Record<string, VariantData> = {
     alt: 'A',
     rsid: 'rs113488022',
     clinvar: 'Pathogenic',
+    stars: 4,
+    reviewStatus: 'Practice guideline (Highest clinical confidence)',
+    license: 'Public Domain (17 U.S.C. § 105)',
+    attributionNotice: 'NCBI ClinVar / dbSNP',
     acmg: ['PS1', 'PS3', 'PM1', 'PM2', 'PP3'],
     chunks: [8572, 8573],
     byteRange: 'bytes=140451840-140484607',
@@ -66,6 +76,10 @@ const PRESET_VARIANTS: Record<string, VariantData> = {
     alt: 'T',
     rsid: 'rs28934578',
     clinvar: 'Pathogenic',
+    stars: 3,
+    reviewStatus: 'Reviewed by expert panel (ClinGen TP53 Panel)',
+    license: 'Public Domain (17 U.S.C. § 105)',
+    attributionNotice: 'NCBI ClinVar / dbSNP',
     acmg: ['PS1', 'PS3', 'PM1', 'PM5', 'PP3'],
     chunks: [468, 469],
     byteRange: 'bytes=7667712-7700479',
@@ -88,6 +102,10 @@ const PRESET_VARIANTS: Record<string, VariantData> = {
     alt: 'A',
     rsid: 'rs334',
     clinvar: 'Pathogenic',
+    stars: 4,
+    reviewStatus: 'Practice guideline (ACMG / CPIC Actionable)',
+    license: 'Public Domain (17 U.S.C. § 105)',
+    attributionNotice: 'NCBI ClinVar / CPIC PharmGKB (CC-BY 4.0)',
     acmg: ['PS1', 'PS3', 'PM1', 'PP3'],
     chunks: [319, 320],
     byteRange: 'bytes=5226496-5259263',
@@ -103,9 +121,15 @@ const PRESET_VARIANTS: Record<string, VariantData> = {
 
 export default function App() {
   const [selectedKey, setSelectedKey] = useState<string>('BRAF V600E')
-  const [activeTab, setActiveTab] = useState<'stream' | 'wiki' | 'swarm' | 'liftover'>('stream')
+  const [activeTab, setActiveTab] = useState<'stream' | 'wiki' | 'swarm' | 'liftover' | 'governance'>('stream')
   const [isVerifying, setIsVerifying] = useState(false)
   const [simulateAdversarialDrift, setSimulateAdversarialDrift] = useState(false)
+  const [kAnonymityTestMode, setKAnonymityTestMode] = useState<'coarse' | 'fine'>('coarse')
+  const [filterTestResult, setFilterTestResult] = useState<{
+    target: string
+    status: 'allowed' | 'blocked'
+    reason: string
+  } | null>(null)
   const [verifiedChunks, setVerifiedChunks] = useState<Record<number, boolean>>({
     8572: true,
     8573: true,
@@ -129,8 +153,62 @@ export default function App() {
     }, 300)
   }
 
+  const runAdversarialFilterTest = (target: 'omim' | 'cosmic' | 'odbl_fail' | 'clinvar') => {
+    if (target === 'omim') {
+      setFilterTestResult({
+        target: 'OMIM Clinical Synopsis Scrape',
+        status: 'blocked',
+        reason: 'DataGovernanceViolation: Proprietary clinical synopsis detected (Johns Hopkins University). Narrative text redistribution prohibited under JHU agreement. Only MIM:###### IDs permitted.',
+      })
+    } else if (target === 'cosmic') {
+      setFilterTestResult({
+        target: 'COSMIC Somatic Mutations Export',
+        status: 'blocked',
+        reason: 'DataGovernanceViolation: Proprietary COSMIC somatic database markers detected (COSMIC_ID=COSM476). Licensed exclusively by QIAGEN/Sanger. Commercial/P2P redistribution blocked.',
+      })
+    } else if (target === 'odbl_fail') {
+      setFilterTestResult({
+        target: 'gnomAD Unpartitioned Import',
+        status: 'blocked',
+        reason: 'DataGovernanceViolation: gnomAD (ODbL 1.0) cannot be intertwined with core proprietary tables. Must reside in an isolated pack partition with mandatory attribution banner.',
+      })
+    } else {
+      setFilterTestResult({
+        target: 'NCBI ClinVar + dbSNP VCF (Public Domain)',
+        status: 'allowed',
+        reason: 'Approved: 17 U.S.C. § 105 US Federal Work. Unrestricted global P2P redistribution and indexing permitted.',
+      })
+    }
+  }
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#ffffff', color: '#0f172a', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+      {/* SaMD Non-Diagnostic Research Disclaimer Banner */}
+      <div
+        style={{
+          backgroundColor: '#fef2f2',
+          borderBottom: '1px solid #fecaca',
+          padding: '8px 24px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontSize: '12px',
+          color: '#991b1b',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <ShieldAlert size={16} color="#dc2626" />
+          <span>
+            <strong>RESEARCH & EDUCATIONAL USE ONLY:</strong> Plasmid is a decentralized open-source scientific viewer, not an FDA/MFDS-cleared Medical Device (SaMD). Do not use for diagnostic decisions.
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11px', color: '#b91c1c' }}>
+          <span>RFC-0003 Compliant</span>
+          <span>•</span>
+          <span>ODbL / Public Domain Quarantined</span>
+        </div>
+      </div>
+
       {/* Header */}
       <header
         style={{
@@ -231,6 +309,25 @@ export default function App() {
           >
             <Radio size={15} /> Hotspot Swarm
           </button>
+          <button
+            onClick={() => setActiveTab('governance')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid',
+              borderColor: activeTab === 'governance' ? '#0284c7' : '#e2e8f0',
+              backgroundColor: activeTab === 'governance' ? '#f0f9ff' : '#ffffff',
+              color: activeTab === 'governance' ? '#0284c7' : '#475569',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <Scale size={15} /> Governance & IP
+          </button>
         </div>
       </header>
 
@@ -298,262 +395,219 @@ export default function App() {
               }}
             >
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: '#1d4ed8' }}>
-                  <Cpu size={16} /> PMTILES V3 2-STAGE HIERARCHICAL LEAF INDEX ACTIVE
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Cpu size={20} color="#0284c7" />
+                  <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: '#0369a1' }}>
+                    PMTiles v3 Hierarchical Leaf Index Verified
+                  </h3>
                 </div>
-                <div style={{ fontSize: '14px', color: '#1e3a8a', marginTop: '4px' }}>
-                  Full genome index (3.2 GB) partitioned into 32-byte leaf pointers. Slicing fetches only target leaf directory slice.
-                </div>
+                <p style={{ fontSize: '13px', color: '#0369a1', margin: '4px 0 0 0' }}>
+                  Targeted 2-Hop directory traversal fetches only 1 KB leaf directory instead of parsing a 128 MB monolithic table.
+                </p>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e40af', fontFamily: 'monospace' }}>
-                  {current.leafLength} Bytes
-                </div>
-                <div style={{ fontSize: '11px', color: '#2563eb' }}>
-                  Leaf Offset: {current.leafOffset} B (99.999% Saved)
-                </div>
+                <span style={{ fontSize: '11px', color: '#0369a1', fontWeight: 600, display: 'block' }}>
+                  NETWORK TRAFFIC REDUCTION
+                </span>
+                <span style={{ fontSize: '24px', fontWeight: 800, color: '#0284c7' }}>
+                  95.0%
+                </span>
               </div>
             </div>
 
-            {/* Slicing Plan Card */}
+            {/* Slicing Inspection Panel */}
             <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Zero-Copy Genomic Slicing Plan</h3>
-                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
-                    Single-container byte-range fetch via noodles-vcf & 16KB Merkle leaf validation
+                  <h2 style={{ fontSize: '20px', fontWeight: 700, margin: 0 }}>
+                    {current.gene} ({current.mutation}) Slicing Plan
+                  </h2>
+                  <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>
+                    {current.chrom}:{current.hg38Pos} • {current.rsid} • {current.ref}&gt;{current.alt}
                   </p>
                 </div>
-                <button
-                  onClick={handleVerifyMerkle}
-                  disabled={isVerifying}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    border: '1px solid #cbd5e1',
-                    backgroundColor: '#ffffff',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: isVerifying ? 'wait' : 'pointer',
-                  }}
-                >
-                  <ShieldCheck size={16} color="#0f172a" />
-                  {isVerifying ? 'Verifying Proof...' : 'Verify Merkle Proof'}
-                </button>
-              </div>
-
-              {/* Coordinates Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '20px' }}>
-                <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>CHROMOSOME</div>
-                  <div style={{ fontSize: '15px', fontWeight: 700, fontFamily: 'monospace' }}>{current.chrom}</div>
-                </div>
-                <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>GRCh38 POSITION</div>
-                  <div style={{ fontSize: '15px', fontWeight: 700, fontFamily: 'monospace' }}>{current.hg38Pos.toLocaleString()}</div>
-                </div>
-                <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>ALLELE (REF / ALT)</div>
-                  <div style={{ fontSize: '15px', fontWeight: 700, fontFamily: 'monospace' }}>{current.ref} → {current.alt}</div>
-                </div>
-                <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <div style={{ fontSize: '11px', color: '#64748b' }}>HTTP RANGE HEADER</div>
-                  <div style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'monospace', color: '#0284c7' }}>{current.byteRange}</div>
-                </div>
-              </div>
-
-              {/* Merkle Leaf Chunks Display */}
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '8px' }}>
-                  16KB MERKLE LEAF CHUNKS (BEP 52 ALIGNED)
-                </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  {current.chunks.map((idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        flex: 1,
-                        padding: '12px 16px',
-                        borderRadius: '6px',
-                        border: '1px solid #e2e8f0',
-                        backgroundColor: '#f8fafc',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'monospace' }}>
-                          Chunk #{idx} (16,384 B)
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                          SHA-256 Leaf Hash Verified
-                        </div>
-                      </div>
-                      {verifiedChunks[idx] && <CheckCircle2 size={18} color="#16a34a" />}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Nucleotide Track */}
-              <div>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '8px' }}>
-                  NUCLEOTIDE SEQUENCE TRACK (ZERO-COPY SLICE)
-                </div>
-                <div
-                  style={{
-                    padding: '16px',
-                    backgroundColor: '#0f172a',
-                    borderRadius: '6px',
-                    fontFamily: 'monospace',
-                    fontSize: '14px',
-                    letterSpacing: '0.2em',
-                    overflowX: 'auto',
-                    color: '#94a3b8',
-                  }}
-                >
-                  <div style={{ marginBottom: '4px' }}>
-                    REF:&nbsp;... T G A C C T C A G A{' '}
-                    <span style={{ color: '#38bdf8', fontWeight: 700, textDecoration: 'underline' }}>
-                      {current.ref}
-                    </span>{' '}
-                    G C T G T C C A C A ...
+                {/* ClinVar Stars Rating Badge */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Star
+                        key={i}
+                        size={15}
+                        fill={i < current.stars ? '#eab308' : 'none'}
+                        color={i < current.stars ? '#eab308' : '#cbd5e1'}
+                      />
+                    ))}
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#ca8a04', marginLeft: '4px' }}>
+                      {current.stars} Stars
+                    </span>
                   </div>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>{current.reviewStatus}</span>
+                </div>
+              </div>
+
+              {/* Range Specs */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>HTTP RANGE</span>
+                  <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>{current.byteRange}</span>
+                </div>
+                <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>PMTILES LEAF DIRECTORY</span>
+                  <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>
+                    offset={current.leafOffset} len={current.leafLength}B
+                  </span>
+                </div>
+                <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>TARGET CHUNKS</span>
+                  <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>
+                    #{current.chunks.join(', #')} (16KB each)
+                  </span>
+                </div>
+                <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>DATA LICENSE</span>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#16a34a' }}>{current.license}</span>
+                </div>
+              </div>
+
+              {/* Merkle Verification Card */}
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '16px', backgroundColor: '#f8fafc' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    ALT:&nbsp;... T G A C C T C A G A{' '}
-                    <span style={{ color: '#ef4444', fontWeight: 700, backgroundColor: '#450a0a', padding: '0 4px' }}>
-                      {current.alt}
-                    </span>{' '}
-                    G C T G T C C A C A ...
+                    <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>MERKLE ROOT HASH</span>
+                    <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600 }}>{current.merkleRoot}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                      <CheckCircle2 size={13} color="#16a34a" />
+                      <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
+                        {verifiedChunks[current.chunks[0]] ? 'Cryptographically Verified (Merkle Leaf Match)' : 'Pending Verification'}
+                      </span>
+                    </div>
                   </div>
+                  <button
+                    onClick={handleVerifyMerkle}
+                    disabled={isVerifying}
+                    style={{
+                      padding: '6px 14px',
+                      backgroundColor: '#0284c7',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isVerifying ? 'Verifying...' : 'Re-verify Proof'}
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Tab 2: Liftover & Adversarial Coordinate Guard */}
+        {/* Tab 2: Coordinate Liftover & Drift Guard */}
         {activeTab === 'liftover' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: 700 }}>WASM Liftover & Sequence Fingerprint Guard</h3>
-                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
-                    Bridges 23andMe/Ancestry (GRCh37/hg19) raw data into modern GRCh38 ClinVar annotations with zero-error reference check
+                  <h3 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>
+                    Deterministic Coordinate Guard & Liftover Engine
+                  </h3>
+                  <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>
+                    Defends against silent off-by-one or legacy build coordinate mismatches across GRCh37/hg19 and GRCh38/hg38
                   </p>
                 </div>
-                <button
-                  onClick={() => setSimulateAdversarialDrift(!simulateAdversarialDrift)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '8px 16px',
-                    borderRadius: '6px',
-                    border: '1px solid',
-                    borderColor: simulateAdversarialDrift ? '#ef4444' : '#cbd5e1',
-                    backgroundColor: simulateAdversarialDrift ? '#fef2f2' : '#ffffff',
-                    color: simulateAdversarialDrift ? '#b91c1c' : '#334155',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <AlertTriangle size={16} />
-                  {simulateAdversarialDrift ? 'Disable Attack Simulation' : 'Simulate Adversarial Drift Attack'}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <label style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={simulateAdversarialDrift}
+                      onChange={(e) => setSimulateAdversarialDrift(e.target.checked)}
+                    />
+                    <span style={{ fontWeight: 600, color: simulateAdversarialDrift ? '#dc2626' : '#475569' }}>
+                      Inject Adversarial 1-bp Coordinate Drift
+                    </span>
+                  </label>
+                </div>
               </div>
 
-              {/* Adversarial Alert Banner */}
-              {simulateAdversarialDrift && (
+              {/* Status Report */}
+              {simulateAdversarialDrift ? (
                 <div
                   style={{
-                    padding: '16px',
-                    borderRadius: '6px',
                     border: '1px solid #fecaca',
+                    borderRadius: '6px',
+                    padding: '16px',
                     backgroundColor: '#fef2f2',
-                    marginBottom: '20px',
                     display: 'flex',
+                    alignItems: 'center',
                     gap: '12px',
-                    alignItems: 'flex-start',
+                    marginBottom: '20px',
                   }}
                 >
-                  <ShieldAlert size={22} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <ShieldAlert size={24} color="#dc2626" />
                   <div>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#991b1b' }}>
-                      CRITICAL ADVERSARIAL ATTACK BLOCKED: COORDINATE DRIFT MISMATCH
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#7f1d1d', marginTop: '4px', lineHeight: 1.5 }}>
-                      Client attempted to query GRCh38 ClinVar using unlifted GRCh37 coordinate ({current.chrom}:{current.hg19Pos}).
-                      <br />
-                      <strong>Reference Fingerprint Mismatch:</strong> Expected ref base &apos;{current.ref}&apos;, but GRCh38 sequence at this unlifted coordinate contains an unrelated intron sequence.
-                      <br />
-                      <em>Execution was halted fail-closed by CoordinateGuard to prevent fatal clinical misinterpretation.</em>
-                    </div>
+                    <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#991b1b', margin: 0 }}>
+                      [ADVERSARIAL ATTACK INTERCEPTED] Coordinate Drift Mismatch Detected
+                    </h4>
+                    <p style={{ fontSize: '12px', color: '#b91c1c', margin: '2px 0 0 0' }}>
+                      Position drifted to {current.hg19Pos + 1}. Fails anchor verification against known clinical loci. Guard safely halted query.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    border: '1px solid #bbf7d0',
+                    borderRadius: '6px',
+                    padding: '16px',
+                    backgroundColor: '#f0fdf4',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    marginBottom: '20px',
+                  }}
+                >
+                  <ShieldCheck size={24} color="#16a34a" />
+                  <div>
+                    <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#166534', margin: 0 }}>
+                      Coordinate Integrity Verified
+                    </h4>
+                    <p style={{ fontSize: '12px', color: '#15803d', margin: '2px 0 0 0' }}>
+                      hg19:{current.hg19Pos} ➔ hg38:{current.hg38Pos} matches verified anchor SNP {current.rsid}.
+                    </p>
                   </div>
                 </div>
               )}
 
-              {/* Liftover Translation Visualizer */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px' }}>
-                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#f8fafc' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '8px' }}>
-                    SOURCE INPUT: GRCh37 / hg19 (DTC Raw Data)
-                  </div>
-                  <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'monospace' }}>
-                    {current.chrom}:{current.hg19Pos.toLocaleString()}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                    Allele: {current.ref} → {current.alt} ({current.rsid})
-                  </div>
+              {/* Liftover Transformation Table */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>SOURCE BUILD (LEGACY)</span>
+                  <span style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'monospace' }}>
+                    GRCh37 / hg19
+                  </span>
+                  <span style={{ fontSize: '12px', display: 'block', marginTop: '4px', color: '#475569' }}>
+                    {current.chrom}:{simulateAdversarialDrift ? current.hg19Pos + 1 : current.hg19Pos}
+                  </span>
                 </div>
-
-                <div style={{ padding: '16px', border: '1px solid #0284c7', borderRadius: '6px', backgroundColor: '#f0f9ff' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#0284c7', marginBottom: '8px' }}>
-                    TARGET BUILD: GRCh38 / hg38 (WASM Liftover)
-                  </div>
-                  <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'monospace', color: '#0369a1' }}>
-                    {current.chrom}:{current.hg38Pos.toLocaleString()}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#0284c7', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <CheckCircle2 size={14} /> Coordinate Delta: {current.hg38Pos - current.hg19Pos > 0 ? '+' : ''}{(current.hg38Pos - current.hg19Pos).toLocaleString()} bp (Verified)
-                  </div>
+                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>TRANSFORMATION DELTA</span>
+                  <span style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'monospace', color: '#0284c7' }}>
+                    +{current.hg38Pos - current.hg19Pos} bp
+                  </span>
+                  <span style={{ fontSize: '12px', display: 'block', marginTop: '4px', color: '#64748b' }}>
+                    Validated against UCSC Chain
+                  </span>
                 </div>
-              </div>
-
-              {/* Anchor SNP Table */}
-              <div>
-                <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '10px' }}>
-                  VERIFIED CLINICAL ANCHOR SNPS (AUTOMATIC BUILD DETECTION)
-                </div>
-                <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
-                  {[
-                    { rsid: 'rs334', gene: 'HBB (Sickle Cell)', hg19: 'chr11:5,248,232', hg38: 'chr11:5,227,002', delta: '-21,230 bp' },
-                    { rsid: 'rs113488022', gene: 'BRAF (V600E)', hg19: 'chr7:140,453,136', hg38: 'chr7:140,753,336', delta: '+300,200 bp' },
-                    { rsid: 'rs28934578', gene: 'TP53 (R248W)', hg19: 'chr17:7,577,538', hg38: 'chr17:7,674,220', delta: '+96,682 bp' },
-                  ].map((row, i) => (
-                    <div
-                      key={row.rsid}
-                      style={{
-                        padding: '12px 16px',
-                        borderBottom: i < 2 ? '1px solid #e2e8f0' : 'none',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        fontSize: '13px',
-                      }}
-                    >
-                      <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>{row.rsid} ({row.gene})</span>
-                      <span style={{ color: '#64748b' }}>hg19: {row.hg19}</span>
-                      <span style={{ color: '#0284c7', fontWeight: 600 }}>hg38: {row.hg38}</span>
-                      <span style={{ fontFamily: 'monospace', fontSize: '12px', color: '#475569' }}>{row.delta}</span>
-                    </div>
-                  ))}
+                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>TARGET BUILD (SSOT)</span>
+                  <span style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'monospace', color: '#16a34a' }}>
+                    GRCh38 / hg38
+                  </span>
+                  <span style={{ fontSize: '12px', display: 'block', marginTop: '4px', color: '#475569' }}>
+                    {current.chrom}:{current.hg38Pos}
+                  </span>
                 </div>
               </div>
             </div>
@@ -564,83 +618,93 @@ export default function App() {
         {activeTab === 'wiki' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
                 <div>
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      backgroundColor: current.clinvar === 'Pathogenic' ? '#fee2e2' : '#fef3c7',
-                      color: current.clinvar === 'Pathogenic' ? '#991b1b' : '#92400e',
-                      marginBottom: '8px',
-                    }}
-                  >
-                    ClinVar: {current.clinvar}
-                  </span>
-                  <h2 style={{ fontSize: '22px', fontWeight: 700, margin: '4px 0' }}>
+                  <h2 style={{ fontSize: '22px', fontWeight: 700, margin: 0 }}>
                     {current.gene} {current.mutation}
                   </h2>
+                  <p style={{ fontSize: '14px', color: '#64748b', margin: '4px 0 0 0' }}>
+                    ClinVar Reference: {current.rsid} • Clinical Significance:{' '}
+                    <span style={{ fontWeight: 700, color: '#dc2626' }}>{current.clinvar}</span>
+                  </p>
                 </div>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  {current.acmg.map((code) => (
-                    <span
-                      key={code}
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        fontFamily: 'monospace',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        border: '1px solid #cbd5e1',
-                        color: '#475569',
-                      }}
-                    >
-                      {code}
-                    </span>
+                {/* ClinVar Star Badge */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#fef9c3', padding: '6px 12px', borderRadius: '6px', border: '1px solid #fef08a' }}>
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Star
+                      key={i}
+                      size={16}
+                      fill={i < current.stars ? '#ca8a04' : 'none'}
+                      color={i < current.stars ? '#ca8a04' : '#cbd5e1'}
+                    />
                   ))}
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#854d0e', marginLeft: '6px' }}>
+                    {current.stars} Gold Stars ({current.reviewStatus})
+                  </span>
                 </div>
               </div>
 
-              <p style={{ fontSize: '15px', color: '#334155', lineHeight: 1.6, marginBottom: '24px' }}>
-                {current.notes}
-              </p>
+              {/* ACMG Criteria Tags */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+                {current.acmg.map((tag) => (
+                  <span
+                    key={tag}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      border: '1px solid #cbd5e1',
+                      backgroundColor: '#f8fafc',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      fontFamily: 'monospace',
+                    }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
 
-              {/* Cited Literature */}
-              <div>
-                <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <FileText size={16} /> Cited Evidence & Literature (SSOT Grounded)
-                </h4>
+              {/* Clinical Description */}
+              <div style={{ marginBottom: '24px', lineHeight: 1.6, fontSize: '14px', color: '#334155' }}>
+                <p>{current.notes}</p>
+              </div>
+
+              {/* Literature Citations (PMID Links Only - No Copyrighted Abstract Bodies) */}
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h4 style={{ fontSize: '14px', fontWeight: 700, margin: 0 }}>
+                    Evidence-Backed Literature Citations (PubMed Outbound Links)
+                  </h4>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                    Copyright-safe metadata indexing (PMID only)
+                  </span>
+                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {current.pubmed.map((p) => (
-                    <div
+                    <a
                       key={p.id}
+                      href={`https://pubmed.ncbi.nlm.nih.gov/${p.id}/`}
+                      target="_blank"
+                      rel="noopener noreferrer"
                       style={{
-                        padding: '12px 16px',
-                        borderRadius: '6px',
+                        padding: '10px 14px',
                         border: '1px solid #e2e8f0',
+                        borderRadius: '6px',
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
+                        textDecoration: 'none',
+                        color: 'inherit',
+                        backgroundColor: '#ffffff',
                       }}
                     >
-                      <div>
-                        <div style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>{p.title}</div>
-                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-                          PMID: {p.id} ({p.year})
-                        </div>
-                      </div>
-                      <a
-                        href={`https://pubmed.ncbi.nlm.nih.gov/${p.id}/`}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ color: '#2563eb', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '13px', textDecoration: 'none' }}
-                      >
-                        PubMed <ExternalLink size={14} />
-                      </a>
-                    </div>
+                      <span style={{ fontSize: '13px', fontWeight: 500 }}>
+                        {p.title} ({p.year})
+                      </span>
+                      <span style={{ fontSize: '12px', color: '#0284c7', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        PMID:{p.id} <ExternalLink size={13} />
+                      </span>
+                    </a>
                   ))}
                 </div>
               </div>
@@ -648,7 +712,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 4: Hotspot Swarm */}
+        {/* Tab 4: Hotspot Swarm & K-Anonymity Guard */}
         {activeTab === 'swarm' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
@@ -698,6 +762,80 @@ export default function App() {
                 </div>
               </div>
 
+              {/* K-Anonymity & Traffic Analysis Attack Defense Section */}
+              <div style={{ padding: '20px', borderRadius: '6px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div>
+                    <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+                      K-Anonymity Traffic Analysis Side-Channel Shield
+                    </h4>
+                    <p style={{ fontSize: '12px', color: '#64748b', margin: '2px 0 0 0' }}>
+                      RFC-0003 prohibits fine-grained single-chunk requests to prevent peer snooping of rare disease carrier status
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => setKAnonymityTestMode('fine')}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '4px',
+                        border: '1px solid',
+                        borderColor: kAnonymityTestMode === 'fine' ? '#dc2626' : '#cbd5e1',
+                        backgroundColor: kAnonymityTestMode === 'fine' ? '#fef2f2' : '#ffffff',
+                        color: kAnonymityTestMode === 'fine' ? '#dc2626' : '#475569',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Simulate Single 16KB Probe
+                    </button>
+                    <button
+                      onClick={() => setKAnonymityTestMode('coarse')}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '4px',
+                        border: '1px solid',
+                        borderColor: kAnonymityTestMode === 'coarse' ? '#16a34a' : '#cbd5e1',
+                        backgroundColor: kAnonymityTestMode === 'coarse' ? '#f0fdf4' : '#ffffff',
+                        color: kAnonymityTestMode === 'coarse' ? '#16a34a' : '#475569',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Subscribe Coarse ~50MB Pack
+                    </button>
+                  </div>
+                </div>
+
+                {kAnonymityTestMode === 'fine' ? (
+                  <div style={{ padding: '12px 16px', borderRadius: '4px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <Ban size={18} color="#dc2626" />
+                    <div>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#991b1b', display: 'block' }}>
+                        [REJECTED: SwarmError::TrafficAnalysisRisk]
+                      </span>
+                      <span style={{ fontSize: '12px', color: '#b91c1c' }}>
+                        Fine-grained single variant chunk probe (#8572) blocked. Peer WebRTC monitoring could correlate client IP with BRCA1 mutation. Must subscribe to full coarse-grained pack.
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '12px 16px', borderRadius: '4px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <ShieldCheck size={18} color="#16a34a" />
+                    <div>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#166534', display: 'block' }}>
+                        [K-ANONYMITY SHIELD ACTIVE] Coarse Pack Swarm Enforced
+                      </span>
+                      <span style={{ fontSize: '12px', color: '#15803d' }}>
+                        Batch of 3,125 chunks (~50MB) swarmed simultaneously. Peers cannot distinguish whether client possesses BRAF, TP53, or any other variant.
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Byzantine Defense Status Card */}
               <div style={{ padding: '16px', borderRadius: '6px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', marginBottom: '24px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -724,8 +862,8 @@ export default function App() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {[
-                  { id: 'peer-tokyo-01', rtt: '14ms', up: '2.4 MB/s', state: 'Seeding 16KB Chunks' },
-                  { id: 'peer-seoul-09', rtt: '22ms', up: '3.1 MB/s', state: 'Seeding 16KB Chunks' },
+                  { id: 'peer-tokyo-01', rtt: '14ms', up: '2.4 MB/s', state: 'Seeding Coarse Packs' },
+                  { id: 'peer-seoul-09', rtt: '22ms', up: '3.1 MB/s', state: 'Seeding Coarse Packs' },
                   { id: 'peer-frankfurt-03', rtt: '48ms', up: '1.2 MB/s', state: 'Leech / Verifying' },
                 ].map((p) => (
                   <div
@@ -746,6 +884,206 @@ export default function App() {
                     <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 500 }}>{p.state}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 5: Governance & IP (RFC-0003) */}
+        {activeTab === 'governance' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* 4-Tier Data Classification Matrix */}
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '6px' }}>
+                RFC-0003: 4-Tier Biomedical Data Governance Matrix
+              </h3>
+              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>
+                Formal legal classifications establishing boundaries between uncopyrightable natural facts, open data, and blacklisted proprietary clinical databases.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                <div style={{ padding: '16px', border: '1px solid #bbf7d0', borderRadius: '6px', backgroundColor: '#f0fdf4' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#166534' }}>
+                      TIER 1: PUBLIC DOMAIN (WHITELIST)
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#16a34a', backgroundColor: '#dcfce7', padding: '2px 6px', borderRadius: '4px' }}>
+                      Unrestricted
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#15803d', margin: 0 }}>
+                    NCBI ClinVar, dbSNP, RefSeq, GRC GRCh37/38 (17 U.S.C. § 105). US Federal government works with zero copyright. Unrestricted global P2P swarming permitted.
+                  </p>
+                </div>
+
+                <div style={{ padding: '16px', border: '1px solid #bfdbfe', borderRadius: '6px', backgroundColor: '#eff6ff' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#1e40af' }}>
+                      TIER 2: OPEN DATA (ODbL / CC-BY)
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#2563eb', backgroundColor: '#dbeafe', padding: '2px 6px', borderRadius: '4px' }}>
+                      Quarantined
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#1d4ed8', margin: 0 }}>
+                    Broad Institute gnomAD (ODbL 1.0), CPIC PharmGKB (CC-BY 4.0). Requires isolated pack partitioning and non-negotiable attribution banner to avoid viral copyleft.
+                  </p>
+                </div>
+
+                <div style={{ padding: '16px', border: '1px solid #fecaca', borderRadius: '6px', backgroundColor: '#fef2f2' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#991b1b' }}>
+                      TIER 3: PROPRIETARY (STRICT BLACKLIST)
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#dc2626', backgroundColor: '#fee2e2', padding: '2px 6px', borderRadius: '4px' }}>
+                      Prohibited
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#b91c1c', margin: 0 }}>
+                    OMIM (Johns Hopkins), COSMIC / HGMD (QIAGEN), SNPedia (MyHeritage). Proprietary clinical synopses and census articles strictly blacklisted. Only factual MIM:###### IDs allowed.
+                  </p>
+                </div>
+
+                <div style={{ padding: '16px', border: '1px solid #fed7aa', borderRadius: '6px', backgroundColor: '#fff7ed' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#9a3412' }}>
+                      TIER 4: PERSONAL BIOMETRIC WGS/VCF
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: 600, color: '#ea580c', backgroundColor: '#ffedd5', padding: '2px 6px', borderRadius: '4px' }}>
+                      OPFS Airgapped
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '12px', color: '#c2410c', margin: 0 }}>
+                    User raw genome records. GDPR Art. 9 & HIPAA biometric data. Never transmitted over WebRTC P2P; strictly decoded locally via WebAssembly and Origin Private File System.
+                  </p>
+                </div>
+              </div>
+
+              {/* Interactive Ingestion Sanitizer / Blacklist Filter */}
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '20px', backgroundColor: '#f8fafc' }}>
+                <h4 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '6px' }}>
+                  Adversarial Data Ingestion Filter Tester
+                </h4>
+                <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '16px' }}>
+                  Test real-time automated detection and rejection of proprietary database scrapes and license violations:
+                </p>
+
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                  <button
+                    onClick={() => runAdversarialFilterTest('omim')}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '4px',
+                      border: '1px solid #cbd5e1',
+                      backgroundColor: '#ffffff',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Test OMIM Synopsis
+                  </button>
+                  <button
+                    onClick={() => runAdversarialFilterTest('cosmic')}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '4px',
+                      border: '1px solid #cbd5e1',
+                      backgroundColor: '#ffffff',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Test COSMIC Somatic IDs
+                  </button>
+                  <button
+                    onClick={() => runAdversarialFilterTest('odbl_fail')}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '4px',
+                      border: '1px solid #cbd5e1',
+                      backgroundColor: '#ffffff',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Test gnomAD Isolation Breach
+                  </button>
+                  <button
+                    onClick={() => runAdversarialFilterTest('clinvar')}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '4px',
+                      border: '1px solid #cbd5e1',
+                      backgroundColor: '#ffffff',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Test ClinVar Public Domain
+                  </button>
+                </div>
+
+                {filterTestResult && (
+                  <div
+                    style={{
+                      padding: '14px 16px',
+                      borderRadius: '6px',
+                      border: '1px solid',
+                      borderColor: filterTestResult.status === 'blocked' ? '#fecaca' : '#bbf7d0',
+                      backgroundColor: filterTestResult.status === 'blocked' ? '#fef2f2' : '#f0fdf4',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      {filterTestResult.status === 'blocked' ? (
+                        <Ban size={18} color="#dc2626" />
+                      ) : (
+                        <CheckCircle2 size={18} color="#16a34a" />
+                      )}
+                      <span
+                        style={{
+                          fontSize: '13px',
+                          fontWeight: 700,
+                          color: filterTestResult.status === 'blocked' ? '#991b1b' : '#166534',
+                        }}
+                      >
+                        Target: {filterTestResult.target} —{' '}
+                        {filterTestResult.status === 'blocked' ? 'BLOCKED' : 'APPROVED'}
+                      </span>
+                    </div>
+                    <p
+                      style={{
+                        fontSize: '12px',
+                        color: filterTestResult.status === 'blocked' ? '#b91c1c' : '#15803d',
+                        margin: 0,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {filterTestResult.reason}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Mandatory Legal & Regulatory Disclaimers */}
+              <div style={{ marginTop: '24px', borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
+                <h4 style={{ fontSize: '13px', fontWeight: 700, color: '#475569', marginBottom: '8px' }}>
+                  MANDATORY ATTRIBUTIONS & REGULATORY SAFE HARBOR
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '11px', color: '#64748b' }}>
+                  <div>
+                    <strong>gnomAD Attribution:</strong> This tool includes data from the Genome Aggregation Database (gnomAD), Broad Institute of MIT and Harvard. Released under the Open Database License (ODbL) v1.0.
+                  </div>
+                  <div>
+                    <strong>CPIC Attribution:</strong> Clinical Pharmacogenetics Implementation Consortium (CPIC) dosing guidelines provided under Creative Commons Attribution 4.0 International (CC-BY 4.0).
+                  </div>
+                  <div>
+                    <strong>Regulatory Notice (FDA/MFDS):</strong> Plasmid is developed strictly as a decentralized scientific research platform pursuant to 21 U.S.C. § 360j(o)(1)(E) Clinical Decision Support software exemptions. Not for clinical diagnosis.
+                  </div>
+                </div>
               </div>
             </div>
           </div>

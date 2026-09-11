@@ -18,6 +18,13 @@ pub struct UnmappedCoordinateDetails {
     pub dst_build: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GovernanceViolationDetails {
+    pub source: String,
+    pub reason: String,
+    pub offending_snippet: String,
+}
+
 #[derive(Error, Debug)]
 pub enum PlasmidCoreError {
     #[error("Format error: {0}")]
@@ -49,6 +56,9 @@ pub enum PlasmidCoreError {
 
     #[error("Unmapped coordinate: {0:?}")]
     UnmappedCoordinate(Box<UnmappedCoordinateDetails>),
+
+    #[error("Data governance violation: {0:?}")]
+    DataGovernanceViolation(Box<GovernanceViolationDetails>),
 }
 
 pub type Result<T> = std::result::Result<T, PlasmidCoreError>;

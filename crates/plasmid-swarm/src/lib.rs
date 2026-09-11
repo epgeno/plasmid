@@ -29,6 +29,12 @@ pub enum SwarmError {
 
     #[error("Origin HTTP fetch failed: {0}")]
     OriginFetchFailed(String),
+
+    #[error("Traffic analysis deanonymization risk: {0}")]
+    TrafficAnalysisRisk(String),
+
+    #[error("Data governance violation: {0}")]
+    DataGovernanceViolation(String),
 }
 
 pub type Result<T> = std::result::Result<T, SwarmError>;
@@ -302,5 +308,112 @@ mod tests {
         println!(
             "[Adversarial Defense Verified] Banned malicious peer and successfully recovered via Origin fallback"
         );
+    }
+
+    #[test]
+    fn test_adversarial_traffic_analysis_single_variant_rejection() {
+        let mut manager = SelectiveSwarmManager::new();
+
+        // 100-chunk sensitive ClinVar pack
+        let manifest = PackManifest::new(
+            "pack-clinvar-hotspot",
+            "ClinVar Pathogenic Hotspot Pack",
+            PackCategory::ClinVarPathogenic,
+            [0x33; HASH_SIZE],
+            100,
+            vec!["BRCA1".to_string(), "TP53".to_string()],
+            "https://origin.plasmid.wiki/packs/clinvar.plasmid",
+        );
+        manager.register_pack(manifest);
+
+        // Adversary or vulnerable client requesting single variant chunk (e.g. chunk 42 for BRCA1)
+        let single_chunk_request = vec![42];
+        let privacy_err =
+            manager.verify_swarm_request_privacy("pack-clinvar-hotspot", &single_chunk_request);
+        assert!(
+            matches!(privacy_err, Err(SwarmError::TrafficAnalysisRisk(_))),
+            "Single-chunk request must be rejected by K-Anonymity guard to prevent carrier traffic analysis"
+        );
+
+        // Batch / coarse request satisfies K-Anonymity
+        let coarse_batch_request = (0..10).collect::<Vec<u32>>();
+        let coarse_res =
+            manager.verify_swarm_request_privacy("pack-clinvar-hotspot", &coarse_batch_request);
+        assert!(
+            coarse_res.is_ok(),
+            "Coarse-grained batch request must pass K-Anonymity guard"
+        );
+    }
+
+    #[test]
+    fn test_gnomad_odbl_attribution_and_partition_compliance() {
+        let manager = SelectiveSwarmManager::new();
+
+        // 1. Non-isolated ODbL pack violates copyleft quarantine
+        let non_isolated_odbl = PackManifest::new(
+            "gnomad-frequencies",
+            "gnomAD Allele Frequencies v4",
+            PackCategory::GenePanel("PopulationGenomics".to_string()),
+            [0x55; HASH_SIZE],
+            50,
+            vec!["ALL".to_string()],
+            "https://origin.plasmid.wiki/packs/gnomad.plasmid",
+        )
+        .with_license("ODbL-1.0", "gnomAD Consortium Attribution", false);
+
+        assert!(matches!(
+            manager.validate_pack_governance(&non_isolated_odbl),
+            Err(SwarmError::DataGovernanceViolation(_))
+        ));
+
+        // 2. ODbL pack missing attribution notice violates license
+        let missing_attr_odbl = PackManifest::new(
+            "gnomad-frequencies",
+            "gnomAD Allele Frequencies v4",
+            PackCategory::GenePanel("PopulationGenomics".to_string()),
+            [0x55; HASH_SIZE],
+            50,
+            vec!["ALL".to_string()],
+            "https://origin.plasmid.wiki/packs/gnomad.plasmid",
+        )
+        .with_license("ODbL-1.0", "", true);
+
+        assert!(matches!(
+            manager.validate_pack_governance(&missing_attr_odbl),
+            Err(SwarmError::DataGovernanceViolation(_))
+        ));
+
+        // 3. Fully compliant ODbL pack passes
+        let compliant_odbl = PackManifest::new(
+            "gnomad-frequencies",
+            "gnomAD Allele Frequencies v4",
+            PackCategory::GenePanel("PopulationGenomics".to_string()),
+            [0x55; HASH_SIZE],
+            50,
+            vec!["ALL".to_string()],
+            "https://origin.plasmid.wiki/packs/gnomad.plasmid",
+        )
+        .with_license("ODbL-1.0", "This tool includes data from the gnomAD consortium (Broad Institute). Released under ODbL 1.0 / CC0.", true);
+
+        assert!(manager.validate_pack_governance(&compliant_odbl).is_ok());
+    }
+
+    #[test]
+    fn test_adversarial_proprietary_pack_swarming_rejection() {
+        let manager = SelectiveSwarmManager::new();
+
+        let proprietary_manifest = PackManifest::new(
+            "pack-cosmic",
+            "COSMIC Somatic Mutations",
+            PackCategory::GenePanel("Oncology".to_string()),
+            [0x77; HASH_SIZE],
+            10,
+            vec!["BRAF".to_string()],
+            "https://example.com/cosmic.plasmid",
+        )
+        .with_license("Proprietary", "", false);
+
+        let res = manager.validate_pack_governance(&proprietary_manifest);
+        assert!(matches!(res, Err(SwarmError::DataGovernanceViolation(_))));
     }
 }

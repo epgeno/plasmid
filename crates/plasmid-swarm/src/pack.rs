@@ -22,6 +22,9 @@ pub struct PackManifest {
     pub total_bytes: u64,
     pub target_genes: Vec<String>,
     pub origin_url: String,
+    pub license_type: String,
+    pub attribution_notice: String,
+    pub is_isolated_partition: bool,
 }
 
 impl PackManifest {
@@ -43,7 +46,22 @@ impl PackManifest {
             total_bytes: chunk_count as u64 * DEFAULT_CHUNK_SIZE as u64,
             target_genes,
             origin_url: origin_url.to_string(),
+            license_type: "PublicDomain".to_string(),
+            attribution_notice: String::new(),
+            is_isolated_partition: true,
         }
+    }
+
+    pub fn with_license(
+        mut self,
+        license_type: &str,
+        attribution_notice: &str,
+        is_isolated_partition: bool,
+    ) -> Self {
+        self.license_type = license_type.to_string();
+        self.attribution_notice = attribution_notice.to_string();
+        self.is_isolated_partition = is_isolated_partition;
+        self
     }
 }
 
@@ -59,6 +77,7 @@ pub struct SelectiveSwarmManager {
     pub banned_peers: HashSet<String>,
     pub peer_strikes: HashMap<String, u32>,
     pub gene_to_packs: HashMap<String, Vec<String>>,
+    pub enforce_k_anonymity: bool,
 }
 
 impl Default for SelectiveSwarmManager {
@@ -74,6 +93,7 @@ impl SelectiveSwarmManager {
             banned_peers: HashSet::new(),
             peer_strikes: HashMap::new(),
             gene_to_packs: HashMap::new(),
+            enforce_k_anonymity: true,
         }
     }
 
@@ -90,6 +110,57 @@ impl SelectiveSwarmManager {
         }
 
         self.packs.insert(pack_id, PackSwarm { manifest, engine });
+    }
+
+    /// Validates licensing and governance rules for a pack manifest before registration.
+    pub fn validate_pack_governance(&self, manifest: &PackManifest) -> Result<(), SwarmError> {
+        let lic = manifest.license_type.to_lowercase();
+        if lic.contains("odbl") {
+            if !manifest.is_isolated_partition {
+                return Err(SwarmError::DataGovernanceViolation(
+                    "ODbL pack must reside in an isolated partition to avoid copyleft contamination"
+                        .to_string(),
+                ));
+            }
+            if manifest.attribution_notice.trim().is_empty() {
+                return Err(SwarmError::DataGovernanceViolation(
+                    "ODbL pack requires non-empty mandatory attribution notice".to_string(),
+                ));
+            }
+        } else if lic.contains("proprietary") || lic.contains("omim") || lic.contains("cosmic") {
+            return Err(SwarmError::DataGovernanceViolation(format!(
+                "Proprietary database pack '{}' is strictly prohibited from P2P swarming",
+                manifest.name
+            )));
+        }
+        Ok(())
+    }
+
+    /// Verifies that a client swarm chunk request does not leak carrier identity.
+    /// Rejects single-variant or fine-grained requests over multi-chunk packs.
+    pub fn verify_swarm_request_privacy(
+        &self,
+        pack_id: &str,
+        requested_chunks: &[u32],
+    ) -> Result<(), SwarmError> {
+        if !self.enforce_k_anonymity {
+            return Ok(());
+        }
+
+        let swarm = self
+            .packs
+            .get(pack_id)
+            .ok_or_else(|| SwarmError::PackNotFound(pack_id.to_string()))?;
+
+        // If client requests a single chunk in a sensitive multi-chunk panel,
+        // it exposes the user to traffic analysis deanonymization.
+        if requested_chunks.len() < 2 && swarm.manifest.chunk_count > 1 {
+            return Err(SwarmError::TrafficAnalysisRisk(format!(
+                "Single chunk query ({:?}) in pack '{}' violates K-Anonymity privacy rule. Request coarse-grained batch or full pack.",
+                requested_chunks, pack_id
+            )));
+        }
+        Ok(())
     }
 
     /// Returns all pack manifests covering a specific target gene.
