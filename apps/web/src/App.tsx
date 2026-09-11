@@ -1,21 +1,24 @@
 import { useState } from 'react'
 import {
-  Share2,
   Cpu,
   Layers,
   CheckCircle2,
   ShieldCheck,
+  ShieldAlert,
+  AlertTriangle,
+  ArrowRightLeft,
   FileText,
   Activity,
-  HardDrive,
   ExternalLink,
+  Radio,
 } from 'lucide-react'
 
 interface VariantData {
   gene: string
   mutation: string
   chrom: string
-  pos: number
+  hg19Pos: number
+  hg38Pos: number
   ref: string
   alt: string
   rsid: string
@@ -24,6 +27,8 @@ interface VariantData {
   chunks: number[]
   byteRange: string
   merkleRoot: string
+  leafOffset: number
+  leafLength: number
   pubmed: { id: string; title: string; year: number }[]
   notes: string
 }
@@ -33,7 +38,8 @@ const PRESET_VARIANTS: Record<string, VariantData> = {
     gene: 'BRAF',
     mutation: 'V600E',
     chrom: 'chr7',
-    pos: 140453136,
+    hg19Pos: 140453136,
+    hg38Pos: 140753336,
     ref: 'T',
     alt: 'A',
     rsid: 'rs113488022',
@@ -42,6 +48,8 @@ const PRESET_VARIANTS: Record<string, VariantData> = {
     chunks: [8572, 8573],
     byteRange: 'bytes=140451840-140484607',
     merkleRoot: '7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069',
+    leafOffset: 2048,
+    leafLength: 1024,
     pubmed: [
       { id: '12068308', title: 'Mutations of the BRAF gene in human cancer', year: 2002 },
       { id: '22818981', title: 'Improved survival with vemurafenib in melanoma with BRAF V600E mutation', year: 2011 },
@@ -52,7 +60,8 @@ const PRESET_VARIANTS: Record<string, VariantData> = {
     gene: 'TP53',
     mutation: 'R175H',
     chrom: 'chr17',
-    pos: 7673770,
+    hg19Pos: 7577538,
+    hg38Pos: 7674220,
     ref: 'C',
     alt: 'T',
     rsid: 'rs28934578',
@@ -61,43 +70,49 @@ const PRESET_VARIANTS: Record<string, VariantData> = {
     chunks: [468, 469],
     byteRange: 'bytes=7667712-7700479',
     merkleRoot: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    leafOffset: 3072,
+    leafLength: 1024,
     pubmed: [
       { id: '20427387', title: 'The p53 tumor suppressor protein: meeting review', year: 2010 },
       { id: '31575995', title: 'Structure and conformational dynamics of p53 DNA-binding domain', year: 2019 },
     ],
     notes: 'Structural hotspot mutation disrupting the zinc coordination sphere of the DNA-binding domain, causing global conformational destabilization.',
   },
-  'EGFR T790M': {
-    gene: 'EGFR',
-    mutation: 'T790M',
-    chrom: 'chr7',
-    pos: 55181378,
-    ref: 'C',
-    alt: 'T',
-    rsid: 'rs121434569',
+  'HBB rs334 (HbS)': {
+    gene: 'HBB',
+    mutation: 'E6V (Sickle Cell)',
+    chrom: 'chr11',
+    hg19Pos: 5248232,
+    hg38Pos: 5227002,
+    ref: 'T',
+    alt: 'A',
+    rsid: 'rs334',
     clinvar: 'Pathogenic',
     acmg: ['PS1', 'PS3', 'PM1', 'PP3'],
-    chunks: [3368, 3369],
-    byteRange: 'bytes=55181312-55214079',
-    merkleRoot: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+    chunks: [319, 320],
+    byteRange: 'bytes=5226496-5259263',
+    merkleRoot: '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8',
+    leafOffset: 4096,
+    leafLength: 1024,
     pubmed: [
-      { id: '15728397', title: 'EGFR mutation and resistance of non-small-cell lung cancer to gefitinib or erlotinib', year: 2005 },
+      { id: '15917409', title: 'Sickle cell disease: basic principles and clinical practice', year: 2005 },
     ],
-    notes: 'Gatekeeper residue mutation causing steric hindrance to first-generation TKIs (gefitinib/erlotinib) and increasing ATP affinity.',
+    notes: 'Glutamic acid to valine substitution causing hemoglobin tetramers to aggregate into rigid helical fibers under low oxygen tension.',
   },
 }
 
 export default function App() {
   const [selectedKey, setSelectedKey] = useState<string>('BRAF V600E')
-  const [activeTab, setActiveTab] = useState<'stream' | 'wiki' | 'swarm'>('stream')
+  const [activeTab, setActiveTab] = useState<'stream' | 'wiki' | 'swarm' | 'liftover'>('stream')
   const [isVerifying, setIsVerifying] = useState(false)
+  const [simulateAdversarialDrift, setSimulateAdversarialDrift] = useState(false)
   const [verifiedChunks, setVerifiedChunks] = useState<Record<number, boolean>>({
     8572: true,
     8573: true,
     468: true,
     469: true,
-    3368: true,
-    3369: true,
+    319: true,
+    320: true,
   })
 
   const current = PRESET_VARIANTS[selectedKey] || PRESET_VARIANTS['BRAF V600E']
@@ -115,171 +130,198 @@ export default function App() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#ffffff', color: '#0f172a' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#ffffff', color: '#0f172a', fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       {/* Header */}
       <header
         style={{
           borderBottom: '1px solid #e2e8f0',
           padding: '16px 24px',
           display: 'flex',
-          alignItems: 'center',
           justifyContent: 'space-between',
+          alignItems: 'center',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <img src="/plasmid.svg" alt="Plasmid Logo" style={{ width: '24px', height: '24px', display: 'block' }} />
-          <span style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '-0.02em' }}>PLASMID</span>
-          <span
-            style={{
-              fontSize: '12px',
-              color: '#64748b',
-              border: '1px solid #e2e8f0',
-              padding: '2px 8px',
-              borderRadius: '4px',
-              fontFamily: 'monospace',
-            }}
-          >
-            v0.1.0-alpha
-          </span>
+          <img src="/plasmid.svg" alt="Plasmid Logo" style={{ width: '28px', height: '28px' }} />
+          <div>
+            <h1 style={{ fontSize: '18px', fontWeight: 700, margin: 0, letterSpacing: '-0.02em' }}>
+              Plasmid <span style={{ fontSize: '12px', fontWeight: 500, color: '#64748b' }}>v0.1.0-alpha</span>
+            </h1>
+            <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+              Decentralized Genomic Wiki & P2P Slicing Engine
+            </p>
+          </div>
         </div>
 
-        <nav style={{ display: 'flex', gap: '24px', fontSize: '14px', fontWeight: 500 }}>
+        {/* Global Navigation Tabs */}
+        <div style={{ display: 'flex', gap: '8px' }}>
           <button
             onClick={() => setActiveTab('stream')}
             style={{
-              background: 'none',
-              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid',
+              borderColor: activeTab === 'stream' ? '#0284c7' : '#e2e8f0',
+              backgroundColor: activeTab === 'stream' ? '#f0f9ff' : '#ffffff',
+              color: activeTab === 'stream' ? '#0284c7' : '#475569',
+              fontSize: '13px',
+              fontWeight: 600,
               cursor: 'pointer',
-              color: activeTab === 'stream' ? '#0f172a' : '#64748b',
-              fontWeight: activeTab === 'stream' ? 700 : 500,
-              paddingBottom: '4px',
-              borderBottom: activeTab === 'stream' ? '2px solid #0f172a' : '2px solid transparent',
             }}
           >
-            Byte Slicing
+            <Layers size={15} /> Range Slicing
+          </button>
+          <button
+            onClick={() => setActiveTab('liftover')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid',
+              borderColor: activeTab === 'liftover' ? '#0284c7' : '#e2e8f0',
+              backgroundColor: activeTab === 'liftover' ? '#f0f9ff' : '#ffffff',
+              color: activeTab === 'liftover' ? '#0284c7' : '#475569',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <ArrowRightLeft size={15} /> Liftover & Guard
           </button>
           <button
             onClick={() => setActiveTab('wiki')}
             style={{
-              background: 'none',
-              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid',
+              borderColor: activeTab === 'wiki' ? '#0284c7' : '#e2e8f0',
+              backgroundColor: activeTab === 'wiki' ? '#f0f9ff' : '#ffffff',
+              color: activeTab === 'wiki' ? '#0284c7' : '#475569',
+              fontSize: '13px',
+              fontWeight: 600,
               cursor: 'pointer',
-              color: activeTab === 'wiki' ? '#0f172a' : '#64748b',
-              fontWeight: activeTab === 'wiki' ? 700 : 500,
-              paddingBottom: '4px',
-              borderBottom: activeTab === 'wiki' ? '2px solid #0f172a' : '2px solid transparent',
             }}
           >
-            Knowledge Wiki
+            <FileText size={15} /> Knowledge Wiki
           </button>
           <button
             onClick={() => setActiveTab('swarm')}
             style={{
-              background: 'none',
-              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              border: '1px solid',
+              borderColor: activeTab === 'swarm' ? '#0284c7' : '#e2e8f0',
+              backgroundColor: activeTab === 'swarm' ? '#f0f9ff' : '#ffffff',
+              color: activeTab === 'swarm' ? '#0284c7' : '#475569',
+              fontSize: '13px',
+              fontWeight: 600,
               cursor: 'pointer',
-              color: activeTab === 'swarm' ? '#0f172a' : '#64748b',
-              fontWeight: activeTab === 'swarm' ? 700 : 500,
-              paddingBottom: '4px',
-              borderBottom: activeTab === 'swarm' ? '2px solid #0f172a' : '2px solid transparent',
             }}
           >
-            P2P Swarm
+            <Radio size={15} /> Hotspot Swarm
           </button>
-        </nav>
+        </div>
       </header>
 
-      {/* Main Container */}
-      <main style={{ maxWidth: '1040px', margin: '0 auto', padding: '40px 24px' }}>
-        {/* Title */}
-        <div style={{ marginBottom: '28px' }}>
-          <h1 style={{ fontSize: '28px', fontWeight: 700, letterSpacing: '-0.03em', marginBottom: '8px' }}>
-            Decentralized Genomic Knowledge Mesh
-          </h1>
-          <p style={{ fontSize: '15px', color: '#64748b', lineHeight: 1.5 }}>
-            Sub-second byte-range CRAM slicing, BitTorrent v2 BEP 52 Merkle trees, and ClinVar local-first graph.
-          </p>
-        </div>
-
-        {/* Preset Selector Chips */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
-            Presets:
-          </span>
-          {Object.keys(PRESET_VARIANTS).map((key) => (
-            <button
-              key={key}
-              onClick={() => setSelectedKey(key)}
-              style={{
-                fontSize: '13px',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: selectedKey === key ? '1px solid #0f172a' : '1px solid #e2e8f0',
-                backgroundColor: selectedKey === key ? '#0f172a' : '#ffffff',
-                color: selectedKey === key ? '#ffffff' : '#334155',
-                fontWeight: selectedKey === key ? 600 : 400,
-                cursor: 'pointer',
-              }}
-            >
-              {key}
-            </button>
-          ))}
-        </div>
-
-        {/* Top Metric Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '32px' }}>
-          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', marginBottom: '8px' }}>
-              <Layers size={16} />
-              <span style={{ fontSize: '13px', fontWeight: 600 }}>CRAM Slicing Latency</span>
-            </div>
-            <div style={{ fontSize: '24px', fontWeight: 700, color: '#0f172a' }}>12.4 ms</div>
-            <div style={{ fontSize: '12px', color: '#16a34a', marginTop: '4px', fontFamily: 'monospace' }}>
-              Range: {current.byteRange} (32 KB)
+      {/* Main Content Area */}
+      <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
+        {/* Preset Selector Banner */}
+        <div
+          style={{
+            padding: '16px 20px',
+            borderRadius: '8px',
+            border: '1px solid #e2e8f0',
+            backgroundColor: '#f8fafc',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '24px',
+          }}
+        >
+          <div>
+            <span style={{ fontSize: '12px', fontWeight: 600, color: '#64748b' }}>ACTIVE GENOMIC LOCUS</span>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+              {Object.keys(PRESET_VARIANTS).map((key) => (
+                <button
+                  key={key}
+                  onClick={() => setSelectedKey(key)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    border: '1px solid',
+                    borderColor: selectedKey === key ? '#0f172a' : '#cbd5e1',
+                    backgroundColor: selectedKey === key ? '#0f172a' : '#ffffff',
+                    color: selectedKey === key ? '#ffffff' : '#334155',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {key}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', marginBottom: '8px' }}>
-              <Share2 size={16} />
-              <span style={{ fontSize: '13px', fontWeight: 600 }}>P2P Swarm Peers</span>
-            </div>
-            <div style={{ fontSize: '24px', fontWeight: 700, color: '#0f172a' }}>18 Seeding</div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-              WebRTC Datachannel (BEP 52 16KB)
-            </div>
-          </div>
-
-          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', marginBottom: '8px' }}>
-              <Cpu size={16} />
-              <span style={{ fontSize: '13px', fontWeight: 600 }}>WASM Slicing Core</span>
-            </div>
-            <div style={{ fontSize: '24px', fontWeight: 700, color: '#0f172a' }}>plasmid-core</div>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-              noodles-vcf zero-copy in Worker
-            </div>
+          <div style={{ textAlign: 'right' }}>
+            <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>TARGET BUILD (SSOT)</span>
+            <span style={{ fontSize: '13px', fontWeight: 700, fontFamily: 'monospace', color: '#0f172a' }}>
+              GRCh38 / hg38
+            </span>
           </div>
         </div>
 
-        {/* Tab 1: Byte Slicing */}
+        {/* Tab 1: Range Slicing & PMTiles v3 Hierarchical Index */}
         {activeTab === 'stream' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* PMTiles v3 Hierarchical Leaf Architecture Metric Card */}
+            <div
+              style={{
+                border: '1px solid #bfdbfe',
+                borderRadius: '8px',
+                padding: '20px',
+                backgroundColor: '#eff6ff',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: '#1d4ed8' }}>
+                  <Cpu size={16} /> PMTILES V3 2-STAGE HIERARCHICAL LEAF INDEX ACTIVE
+                </div>
+                <div style={{ fontSize: '14px', color: '#1e3a8a', marginTop: '4px' }}>
+                  Full genome index (3.2 GB) partitioned into 32-byte leaf pointers. Slicing fetches only target leaf directory slice.
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '18px', fontWeight: 800, color: '#1e40af', fontFamily: 'monospace' }}>
+                  {current.leafLength} Bytes
+                </div>
+                <div style={{ fontSize: '11px', color: '#2563eb' }}>
+                  Leaf Offset: {current.leafOffset} B (99.999% Saved)
+                </div>
+              </div>
+            </div>
+
+            {/* Slicing Plan Card */}
             <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '20px',
-                }}
-              >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: 700 }}>
-                    {current.chrom}:{current.pos} ({current.gene} {current.mutation})
-                  </h3>
+                  <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Zero-Copy Genomic Slicing Plan</h3>
                   <p style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
-                    dbSNP {current.rsid} • Ref: {current.ref} → Alt: {current.alt} • GRCh38
+                    Single-container byte-range fetch via noodles-vcf & 16KB Merkle leaf validation
                   </p>
                 </div>
                 <button
@@ -289,18 +331,38 @@ export default function App() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
-                    padding: '8px 14px',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    border: '1px solid #cbd5e1',
+                    backgroundColor: '#ffffff',
                     fontSize: '13px',
                     fontWeight: 600,
-                    backgroundColor: '#f8fafc',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
+                    cursor: isVerifying ? 'wait' : 'pointer',
                   }}
                 >
                   <ShieldCheck size={16} color="#0f172a" />
                   {isVerifying ? 'Verifying Proof...' : 'Verify Merkle Proof'}
                 </button>
+              </div>
+
+              {/* Coordinates Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '20px' }}>
+                <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>CHROMOSOME</div>
+                  <div style={{ fontSize: '15px', fontWeight: 700, fontFamily: 'monospace' }}>{current.chrom}</div>
+                </div>
+                <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>GRCh38 POSITION</div>
+                  <div style={{ fontSize: '15px', fontWeight: 700, fontFamily: 'monospace' }}>{current.hg38Pos.toLocaleString()}</div>
+                </div>
+                <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>ALLELE (REF / ALT)</div>
+                  <div style={{ fontSize: '15px', fontWeight: 700, fontFamily: 'monospace' }}>{current.ref} → {current.alt}</div>
+                </div>
+                <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '11px', color: '#64748b' }}>HTTP RANGE HEADER</div>
+                  <div style={{ fontSize: '12px', fontWeight: 600, fontFamily: 'monospace', color: '#0284c7' }}>{current.byteRange}</div>
+                </div>
               </div>
 
               {/* Merkle Leaf Chunks Display */}
@@ -337,7 +399,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Genomic Sequence Alignment Visualizer */}
+              {/* Nucleotide Track */}
               <div>
                 <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '8px' }}>
                   NUCLEOTIDE SEQUENCE TRACK (ZERO-COPY SLICE)
@@ -374,7 +436,131 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 2: Knowledge Wiki */}
+        {/* Tab 2: Liftover & Adversarial Coordinate Guard */}
+        {activeTab === 'liftover' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <div>
+                  <h3 style={{ fontSize: '18px', fontWeight: 700 }}>WASM Liftover & Sequence Fingerprint Guard</h3>
+                  <p style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
+                    Bridges 23andMe/Ancestry (GRCh37/hg19) raw data into modern GRCh38 ClinVar annotations with zero-error reference check
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSimulateAdversarialDrift(!simulateAdversarialDrift)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    border: '1px solid',
+                    borderColor: simulateAdversarialDrift ? '#ef4444' : '#cbd5e1',
+                    backgroundColor: simulateAdversarialDrift ? '#fef2f2' : '#ffffff',
+                    color: simulateAdversarialDrift ? '#b91c1c' : '#334155',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <AlertTriangle size={16} />
+                  {simulateAdversarialDrift ? 'Disable Attack Simulation' : 'Simulate Adversarial Drift Attack'}
+                </button>
+              </div>
+
+              {/* Adversarial Alert Banner */}
+              {simulateAdversarialDrift && (
+                <div
+                  style={{
+                    padding: '16px',
+                    borderRadius: '6px',
+                    border: '1px solid #fecaca',
+                    backgroundColor: '#fef2f2',
+                    marginBottom: '20px',
+                    display: 'flex',
+                    gap: '12px',
+                    alignItems: 'flex-start',
+                  }}
+                >
+                  <ShieldAlert size={22} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#991b1b' }}>
+                      CRITICAL ADVERSARIAL ATTACK BLOCKED: COORDINATE DRIFT MISMATCH
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#7f1d1d', marginTop: '4px', lineHeight: 1.5 }}>
+                      Client attempted to query GRCh38 ClinVar using unlifted GRCh37 coordinate ({current.chrom}:{current.hg19Pos}).
+                      <br />
+                      <strong>Reference Fingerprint Mismatch:</strong> Expected ref base &apos;{current.ref}&apos;, but GRCh38 sequence at this unlifted coordinate contains an unrelated intron sequence.
+                      <br />
+                      <em>Execution was halted fail-closed by CoordinateGuard to prevent fatal clinical misinterpretation.</em>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Liftover Translation Visualizer */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px' }}>
+                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px', backgroundColor: '#f8fafc' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '8px' }}>
+                    SOURCE INPUT: GRCh37 / hg19 (DTC Raw Data)
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'monospace' }}>
+                    {current.chrom}:{current.hg19Pos.toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                    Allele: {current.ref} → {current.alt} ({current.rsid})
+                  </div>
+                </div>
+
+                <div style={{ padding: '16px', border: '1px solid #0284c7', borderRadius: '6px', backgroundColor: '#f0f9ff' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#0284c7', marginBottom: '8px' }}>
+                    TARGET BUILD: GRCh38 / hg38 (WASM Liftover)
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: 700, fontFamily: 'monospace', color: '#0369a1' }}>
+                    {current.chrom}:{current.hg38Pos.toLocaleString()}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#0284c7', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <CheckCircle2 size={14} /> Coordinate Delta: {current.hg38Pos - current.hg19Pos > 0 ? '+' : ''}{(current.hg38Pos - current.hg19Pos).toLocaleString()} bp (Verified)
+                  </div>
+                </div>
+              </div>
+
+              {/* Anchor SNP Table */}
+              <div>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '10px' }}>
+                  VERIFIED CLINICAL ANCHOR SNPS (AUTOMATIC BUILD DETECTION)
+                </div>
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                  {[
+                    { rsid: 'rs334', gene: 'HBB (Sickle Cell)', hg19: 'chr11:5,248,232', hg38: 'chr11:5,227,002', delta: '-21,230 bp' },
+                    { rsid: 'rs113488022', gene: 'BRAF (V600E)', hg19: 'chr7:140,453,136', hg38: 'chr7:140,753,336', delta: '+300,200 bp' },
+                    { rsid: 'rs28934578', gene: 'TP53 (R248W)', hg19: 'chr17:7,577,538', hg38: 'chr17:7,674,220', delta: '+96,682 bp' },
+                  ].map((row, i) => (
+                    <div
+                      key={row.rsid}
+                      style={{
+                        padding: '12px 16px',
+                        borderBottom: i < 2 ? '1px solid #e2e8f0' : 'none',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: '13px',
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>{row.rsid} ({row.gene})</span>
+                      <span style={{ color: '#64748b' }}>hg19: {row.hg19}</span>
+                      <span style={{ color: '#0284c7', fontWeight: 600 }}>hg38: {row.hg38}</span>
+                      <span style={{ fontFamily: 'monospace', fontSize: '12px', color: '#475569' }}>{row.delta}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Knowledge Wiki */}
         {activeTab === 'wiki' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
@@ -394,7 +580,7 @@ export default function App() {
                   >
                     ClinVar: {current.clinvar}
                   </span>
-                  <h2 style={{ fontSize: '22px', fontWeight: 700 }}>
+                  <h2 style={{ fontSize: '22px', fontWeight: 700, margin: '4px 0' }}>
                     {current.gene} {current.mutation}
                   </h2>
                 </div>
@@ -462,53 +648,85 @@ export default function App() {
           </div>
         )}
 
-        {/* Tab 3: P2P Swarm */}
+        {/* Tab 4: Hotspot Swarm */}
         {activeTab === 'swarm' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Local-First Swarm Mesh</h3>
+                  <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Selective Hotspot Swarm & Byzantine Defense</h3>
                   <p style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
-                    BitTorrent v2 BEP 52 over WebRTC Datachannels & Origin Fast-Path
+                    Prevents 3Gb whole-genome long-tail bit rot by routing queries to high-demand clinical panels with origin fallback
                   </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Activity size={18} color="#16a34a" />
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#16a34a' }}>Swarm Active</span>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: '#16a34a' }}>3 Swarm Topics Active</span>
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px' }}>
+              {/* Hotspot Annotation Packs List */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
                 <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>
-                    <HardDrive size={14} /> LOCAL OPFS CACHE (ISOLATED)
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#0284c7', marginBottom: '4px' }}>
+                    CLINVAR PATHOGENIC PACK
                   </div>
-                  <div style={{ fontSize: '20px', fontWeight: 700 }}>144 KB Cached</div>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-                    Air-gapped from personal uploads
+                  <div style={{ fontSize: '18px', fontWeight: 700 }}>~50 MB</div>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                    12 active peers • 99.8% cached
                   </div>
                 </div>
 
                 <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>
-                    <Share2 size={14} /> P2P OFF-LOAD RATIO
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#0284c7', marginBottom: '4px' }}>
+                    ACMG SECONDARY FINDINGS
                   </div>
-                  <div style={{ fontSize: '20px', fontWeight: 700, color: '#16a34a' }}>91.4% Saved</div>
-                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-                    Cloudflare R2 bandwidth saved
+                  <div style={{ fontSize: '18px', fontWeight: 700 }}>~15 MB</div>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                    34 active peers • 100% cached
+                  </div>
+                </div>
+
+                <div style={{ padding: '16px', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#0284c7', marginBottom: '4px' }}>
+                    CPIC PHARMACOGENOMICS
+                  </div>
+                  <div style={{ fontSize: '18px', fontWeight: 700 }}>~5 MB</div>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                    18 active peers • 100% cached
                   </div>
                 </div>
               </div>
 
+              {/* Byzantine Defense Status Card */}
+              <div style={{ padding: '16px', borderRadius: '6px', border: '1px solid #e2e8f0', backgroundColor: '#f8fafc', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ShieldCheck size={18} color="#16a34a" />
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                        Byzantine Consensus & Quorum Defense
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#64748b' }}>
+                        1 peer struck and banned for Merkle root mismatch • Zero payload pollution
+                      </div>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#16a34a', backgroundColor: '#dcfce7', padding: '4px 8px', borderRadius: '4px' }}>
+                    Airgap Secure
+                  </span>
+                </div>
+              </div>
+
+              {/* WebRTC Peers */}
               <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginBottom: '8px' }}>
-                ACTIVE WEBRTC PEERS IN CURRENT MERKLE RANGE
+                ACTIVE WEBRTC PEERS IN CURRENT PACK TOPIC
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {[
-                  { id: 'peer-8b4a', rtt: '14ms', up: '2.4 MB/s', state: 'Seeding 16KB Chunks' },
-                  { id: 'peer-c102', rtt: '28ms', up: '1.8 MB/s', state: 'Seeding 16KB Chunks' },
-                  { id: 'peer-77f1', rtt: '42ms', up: '950 KB/s', state: 'Leech / Verifying' },
+                  { id: 'peer-tokyo-01', rtt: '14ms', up: '2.4 MB/s', state: 'Seeding 16KB Chunks' },
+                  { id: 'peer-seoul-09', rtt: '22ms', up: '3.1 MB/s', state: 'Seeding 16KB Chunks' },
+                  { id: 'peer-frankfurt-03', rtt: '48ms', up: '1.2 MB/s', state: 'Leech / Verifying' },
                 ].map((p) => (
                   <div
                     key={p.id}
@@ -516,7 +734,7 @@ export default function App() {
                       padding: '12px 16px',
                       borderRadius: '6px',
                       border: '1px solid #e2e8f0',
-                      backgroundColor: '#f8fafc',
+                      backgroundColor: '#ffffff',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',

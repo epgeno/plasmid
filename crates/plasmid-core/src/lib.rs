@@ -1,6 +1,7 @@
 pub mod chrom;
 pub mod decoder;
 pub mod error;
+pub mod liftover;
 pub mod slicing;
 pub mod wasm;
 pub mod zero_copy;
@@ -11,6 +12,10 @@ pub use decoder::{
     GenomicCoordinator, UnifiedGenomicSlice, VcfDecoder, VcfVariantRecord,
 };
 pub use error::{PlasmidCoreError, Result};
+pub use liftover::{
+    AnchorSnp, CURATED_ANCHOR_SNPS, CoordinateGuard, GenomeBuild, LiftoverEngine, LiftoverInterval,
+    LiftoverResult,
+};
 pub use slicing::{ByteRange, RangePlanner, SlicingPlan, coalesce_byte_ranges};
 #[cfg(feature = "wasm")]
 pub use wasm::PlasmidWasmEngine;
@@ -57,22 +62,14 @@ mod tests {
         );
 
         let mut out = Vec::new();
-        let header = builder.build(&mut out).unwrap();
+        let _header = builder.build(&mut out).unwrap();
 
         let cursor = Cursor::new(out);
         let mut reader = PlasmidReader::new(cursor).unwrap();
 
         // 1. Planning test
-        let plan = RangePlanner::plan_slice(
-            &reader.directory,
-            "chr7",
-            140453136,
-            140453136,
-            None,
-            header.metadata_offset + header.metadata_length,
-            header.chunk_size,
-        )
-        .unwrap();
+        let plan =
+            RangePlanner::plan_reader(&mut reader, "chr7", 140453136, 140453136, None).unwrap();
 
         assert_eq!(plan.chrom_id, 7);
         assert!(!plan.chunk_indices.is_empty());
