@@ -9,7 +9,6 @@ pub mod wasm;
 pub mod zero_copy;
 
 pub use chrom::{chrom_to_id, grch38_contig_length, id_to_chrom};
-pub use pyramid::{ChromosomeOverview, PYRAMID_BIN_SIZE, PyramidIndex};
 pub use decoder::{
     AnnotationDecoder, AnnotationRecord, DecodeStats, FastaDecoder, FastaRecord,
     GenomicCoordinator, UnifiedGenomicSlice, VcfDecoder, VcfVariantRecord,
@@ -23,6 +22,7 @@ pub use liftover::{
     AnchorSnp, CURATED_ANCHOR_SNPS, CoordinateGuard, GenomeBuild, LiftoverEngine, LiftoverInterval,
     LiftoverResult,
 };
+pub use pyramid::{ChromosomeOverview, PYRAMID_BIN_SIZE, PyramidIndex};
 pub use slicing::{ByteRange, RangePlanner, SlicingPlan, coalesce_byte_ranges};
 #[cfg(feature = "wasm")]
 pub use wasm::PlasmidWasmEngine;

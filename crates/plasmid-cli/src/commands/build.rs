@@ -238,7 +238,8 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Embed multi-scale pyramid index into metadata
-    let mut meta_val: serde_json::Value = serde_json::from_str(&meta_str).unwrap_or(serde_json::json!({}));
+    let mut meta_val: serde_json::Value =
+        serde_json::from_str(&meta_str).unwrap_or(serde_json::json!({}));
     if let Ok(pyr_val) = serde_json::to_value(&pyramid) {
         meta_val["pyramid"] = pyr_val;
     }
