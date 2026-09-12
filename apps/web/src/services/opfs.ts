@@ -192,3 +192,7 @@ export class OPFSManager {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 }
+
+export const opfsManager = OPFSManager.getInstance();
+export const opfs = opfsManager;
+

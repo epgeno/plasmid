@@ -159,3 +159,5 @@ class DecoderWorkerClient {
 }
 
 export const decoderClient = DecoderWorkerClient.getInstance();
+export type { ParsedVariant, DensityBin };
+
