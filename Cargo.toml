@@ -4,6 +4,7 @@ members = [
     "crates/plasmid-core",
     "crates/plasmid-format",
     "crates/plasmid-swarm",
+    "crates/plasmid-cli",
 ]
 
 [workspace.package]
