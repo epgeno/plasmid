@@ -1,1 +1,1 @@
-{"root":["./src/App.tsx","./src/i18n.ts","./src/main.tsx","./src/worker.ts"],"version":"5.7.3"}
+{"root":["./src/App.tsx","./src/i18n.ts","./src/main.tsx","./src/worker.ts","./src/components/GenomeNavigator.tsx","./src/services/cytoband.ts","./src/services/decoderClient.ts","./src/services/opfs.ts","./src/workers/genome-decoder.worker.ts"],"version":"5.7.3"}
