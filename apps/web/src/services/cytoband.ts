@@ -144,3 +144,15 @@ export function getStainColor(stain: Cytoband['stain']): string {
     default: return '#E5E7EB';
   }
 }
+
+export const cytobandService = {
+  getChromInfo: (chrom: string, assembly: GenomeAssembly = 'GRCh38') => {
+    const map = assembly === 'GRCh38' ? GRCH38_CHROMOSOMES : GRCH37_CHROMOSOMES;
+    return map[chrom];
+  },
+  getCytobands: (chrom: string, assembly: GenomeAssembly = 'GRCh38') => {
+    return getChromosomeCytobands(chrom, assembly);
+  },
+};
+
+
