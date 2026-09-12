@@ -1,0 +1,23 @@
+[package]
+name = "plasmid-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Official CLI compiler, inspection, and verification suite for .plasmid genomic containers"
+
+[[bin]]
+name = "plasmid"
+path = "src/main.rs"
+
+[dependencies]
+plasmid-core = { path = "../plasmid-core" }
+plasmid-format = { path = "../plasmid-format" }
+plasmid-swarm = { path = "../plasmid-swarm" }
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+
+[dev-dependencies]
+tempfile = "3.16"
+

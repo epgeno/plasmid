@@ -59,6 +59,7 @@
 | `crates/plasmid-format` | `plasmid-format` | 128-byte header, SHA-256 Merkle tree (BEP 52), and 32-byte index directory parser. |
 | `crates/plasmid-core` | `plasmid-core` | Genomic coordinate query planner, Range Slicing coordinator, and `noodles` VCF decoder. |
 | `crates/plasmid-swarm` | `plasmid-swarm` | WebRTC P2P chunk protocol, RTT-based peer selection, and Byzantine defense engine. |
+| `crates/plasmid-cli` | `plasmid-cli` | Official CLI compiler, container inspector, Merkle verifier, and slice query tool. |
 | `apps/web` | `plasmid-web` | React 19 + Vite 6 ultra-lightweight client for `plasmid.wiki` (Pure White monochrome UI). |
 | `docs/rfc` | RFC Specifications | Formal binary container and air-gap privacy specifications. |
 
@@ -89,6 +90,22 @@ pnpm install
 pnpm dev
 ```
 Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+### 3. Using the Plasmid CLI
+
+```bash
+# Build .plasmid container from VCF, FASTA, and annotations
+cargo run -p plasmid-cli -- build --vcf sample.vcf --fasta ref.fa --annotation notes.md -o sample.plasmid
+
+# Inspect container 128B header, metadata, and index entries
+cargo run -p plasmid-cli -- inspect sample.plasmid --entries
+
+# Verify cryptographic SHA-256 Merkle tree and 16KB chunk integrity
+cargo run -p plasmid-cli -- verify sample.plasmid --verbose
+
+# Perform coordinate range slicing and generate HTTP Range header byte plans
+cargo run -p plasmid-cli -- query sample.plasmid --chr chr7 --start 140453100 --end 140453200
+```
 
 ---
 
