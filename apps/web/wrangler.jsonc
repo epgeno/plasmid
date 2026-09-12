@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "plasmid-web",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-03-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  // R2 Bucket: Cloudflare 대시보드에서 R2 활성화 후 'npx wrangler r2 bucket create plasmid-data' 실행 후 바인딩 활성화
+  // "r2_buckets": [
+  //   {
+  //     "binding": "GENOME_BUCKET",
+  //     "bucket_name": "plasmid-data"
+  //   }
+  // ],
+  "routes": [
+    { "pattern": "plasmid.wiki", "custom_domain": true },
+    { "pattern": "www.plasmid.wiki", "custom_domain": true }
+  ]
+}
