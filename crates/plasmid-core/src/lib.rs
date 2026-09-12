@@ -3,11 +3,13 @@ pub mod decoder;
 pub mod error;
 pub mod governance;
 pub mod liftover;
+pub mod pyramid;
 pub mod slicing;
 pub mod wasm;
 pub mod zero_copy;
 
 pub use chrom::{chrom_to_id, grch38_contig_length, id_to_chrom};
+pub use pyramid::{ChromosomeOverview, PYRAMID_BIN_SIZE, PyramidIndex};
 pub use decoder::{
     AnnotationDecoder, AnnotationRecord, DecodeStats, FastaDecoder, FastaRecord,
     GenomicCoordinator, UnifiedGenomicSlice, VcfDecoder, VcfVariantRecord,

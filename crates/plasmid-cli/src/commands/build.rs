@@ -46,6 +46,7 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
     println!("   Output File:     {}", args.output.display());
 
     let mut builder = PlasmidBuilder::new(&args.reference);
+    let mut pyramid = plasmid_core::pyramid::PyramidIndex::new(&args.reference);
 
     // 1. Process Metadata
     let meta_str = if let Some(m) = &args.metadata {
@@ -100,6 +101,12 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
 
             let ref_seq = parts[3];
             let end_pos = pos + (ref_seq.len().max(1) as u64) - 1;
+
+            if let Ok(variants) = plasmid_core::decoder::VcfDecoder::decode_slice(line.as_bytes()) {
+                for v in &variants {
+                    pyramid.ingest_variant(chrom_str, v);
+                }
+            }
 
             builder.add_item(
                 chrom_id,
@@ -229,6 +236,13 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
     if total_items == 0 {
         eprintln!("⚠️  Warning: No input data provided. Building container with empty payload.");
     }
+
+    // Embed multi-scale pyramid index into metadata
+    let mut meta_val: serde_json::Value = serde_json::from_str(&meta_str).unwrap_or(serde_json::json!({}));
+    if let Ok(pyr_val) = serde_json::to_value(&pyramid) {
+        meta_val["pyramid"] = pyr_val;
+    }
+    builder.set_metadata(&meta_val.to_string());
 
     // Create parent directories if missing
     if let Some(parent) = args.output.parent() {
