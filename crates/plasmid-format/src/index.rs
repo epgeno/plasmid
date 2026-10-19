@@ -141,6 +141,110 @@ impl PlasmidDirectory {
     }
 }
 
+pub const INDEX_LEAF_POINTER_SIZE: usize = 32;
+
+/// Fixed 32-byte pointer in the Root Directory pointing to an isolated Leaf Directory block.
+/// Modeled after PMTiles v3 2-stage hierarchical index to allow ~2KB partial range fetching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlasmidLeafPointer {
+    pub chrom_id: u16,
+    pub flags: u16,
+    pub min_pos: u64,
+    pub max_pos: u64,
+    pub leaf_offset: u64,
+    pub leaf_length: u32,
+    pub entry_count: u32,
+}
+
+impl PlasmidLeafPointer {
+    pub fn serialize(&self) -> [u8; INDEX_LEAF_POINTER_SIZE] {
+        let mut buf = [0u8; INDEX_LEAF_POINTER_SIZE];
+        buf[0..2].copy_from_slice(&self.chrom_id.to_le_bytes());
+        buf[2..4].copy_from_slice(&self.flags.to_le_bytes());
+        buf[4..12].copy_from_slice(&self.min_pos.to_le_bytes());
+        buf[12..20].copy_from_slice(&self.max_pos.to_le_bytes());
+        buf[20..28].copy_from_slice(&self.leaf_offset.to_le_bytes());
+        buf[28..32].copy_from_slice(&self.leaf_length.to_le_bytes());
+        buf
+    }
+
+    pub fn deserialize(buf: &[u8]) -> Result<Self> {
+        if buf.len() < INDEX_LEAF_POINTER_SIZE {
+            return Err(PlasmidFormatError::CorruptedIndex);
+        }
+
+        let chrom_id = u16::from_le_bytes([buf[0], buf[1]]);
+        let flags = u16::from_le_bytes([buf[2], buf[3]]);
+        let min_pos = u64::from_le_bytes(buf[4..12].try_into().unwrap());
+        let max_pos = u64::from_le_bytes(buf[12..20].try_into().unwrap());
+        let leaf_offset = u64::from_le_bytes(buf[20..28].try_into().unwrap());
+        let leaf_length = u32::from_le_bytes(buf[28..32].try_into().unwrap());
+        let entry_count = leaf_length / INDEX_ENTRY_SIZE as u32;
+
+        Ok(Self {
+            chrom_id,
+            flags,
+            min_pos,
+            max_pos,
+            leaf_offset,
+            leaf_length,
+            entry_count,
+        })
+    }
+}
+
+/// Root directory containing pointers to hierarchical leaf directories.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct PlasmidRootDirectory {
+    pub leaves: Vec<PlasmidLeafPointer>,
+}
+
+impl PlasmidRootDirectory {
+    pub fn new(mut leaves: Vec<PlasmidLeafPointer>) -> Self {
+        leaves.sort_by_key(|l| (l.chrom_id, l.min_pos));
+        Self { leaves }
+    }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.leaves.len() * INDEX_LEAF_POINTER_SIZE);
+        for leaf in &self.leaves {
+            out.extend_from_slice(&leaf.serialize());
+        }
+        out
+    }
+
+    pub fn deserialize(bytes: &[u8]) -> Result<Self> {
+        if !bytes.len().is_multiple_of(INDEX_LEAF_POINTER_SIZE) {
+            return Err(PlasmidFormatError::CorruptedIndex);
+        }
+
+        let count = bytes.len() / INDEX_LEAF_POINTER_SIZE;
+        let mut leaves = Vec::with_capacity(count);
+
+        for i in 0..count {
+            let start = i * INDEX_LEAF_POINTER_SIZE;
+            let end = start + INDEX_LEAF_POINTER_SIZE;
+            leaves.push(PlasmidLeafPointer::deserialize(&bytes[start..end])?);
+        }
+
+        Ok(Self { leaves })
+    }
+
+    /// Finds all leaf pointers overlapping a given genomic coordinate range.
+    pub fn find_overlapping_leaves(
+        &self,
+        chrom_id: u16,
+        start_pos: u64,
+        end_pos: u64,
+    ) -> Vec<PlasmidLeafPointer> {
+        self.leaves
+            .iter()
+            .filter(|l| l.chrom_id == chrom_id && l.min_pos <= end_pos && l.max_pos >= start_pos)
+            .copied()
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

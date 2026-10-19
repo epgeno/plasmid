@@ -59,6 +59,7 @@
 | `crates/plasmid-format` | `plasmid-format` | 128B 고정 헤더, SHA-256 머클 트리(BEP 52), 32B 고밀도 인덱스 디렉터리 구현. |
 | `crates/plasmid-core` | `plasmid-core` | 유전체 좌표 쿼리 플래너, Range Slicing 코디네이터, `noodles` VCF 파서. |
 | `crates/plasmid-swarm` | `plasmid-swarm` | WebRTC P2P 청크 교환 프로토콜, RTT 기반 피어 선택, 비잔틴 청크 검증. |
+| `crates/plasmid-cli` | `plasmid-cli` | 공식 CLI 컴파일러, 컨테이너 헤더 인스펙터, 머클 검증기 및 슬라이스 쿼리 도구. |
 | `apps/web` | `plasmid-web` | React 19 + Vite 6 초경량 공식 웹 클라이언트 (Pure White 플랫 모노크롬 UI). |
 | `docs/rfc` | RFC 공식 규격 | 단일 컨테이너 포맷(RFC-0001) 및 에어갭 보안(RFC-0002) 명세서. |
 
@@ -89,6 +90,22 @@ pnpm install
 pnpm dev
 ```
 브라우저에서 [http://localhost:5173](http://localhost:5173)으로 접속합니다.
+
+### 3. Plasmid CLI 도구 사용법
+
+```bash
+# VCF, FASTA 및 어노테이션 노트를 .plasmid 단일 파일로 패키징
+cargo run -p plasmid-cli -- build --vcf sample.vcf --fasta ref.fa --annotation notes.md -o sample.plasmid
+
+# 128B 고정 헤더, 인덱스 레이아웃 및 메타데이터 조회
+cargo run -p plasmid-cli -- inspect sample.plasmid --entries
+
+# SHA-256 머클 트리 및 16KB 청크 암호학적 무결성 검증
+cargo run -p plasmid-cli -- verify sample.plasmid --verbose
+
+# 염색체 좌표 슬라이싱 및 HTTP Range 요청 바이트 플랜 생성
+cargo run -p plasmid-cli -- query sample.plasmid --chr chr7 --start 140453100 --end 140453200
+```
 
 ---
 

@@ -1,5 +1,30 @@
 use thiserror::Error;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoordinateDriftDetails {
+    pub rsid: String,
+    pub chrom: String,
+    pub pos: u64,
+    pub found: String,
+    pub expected: String,
+    pub target_build: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnmappedCoordinateDetails {
+    pub chrom: String,
+    pub pos: u64,
+    pub src_build: String,
+    pub dst_build: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GovernanceViolationDetails {
+    pub source: String,
+    pub reason: String,
+    pub offending_snippet: String,
+}
+
 #[derive(Error, Debug)]
 pub enum PlasmidCoreError {
     #[error("Format error: {0}")]
@@ -25,6 +50,15 @@ pub enum PlasmidCoreError {
 
     #[error("Merkle verification error: {0}")]
     MerkleVerification(String),
+
+    #[error("Coordinate drift mismatch: variant {0:?}")]
+    CoordinateDriftMismatch(Box<CoordinateDriftDetails>),
+
+    #[error("Unmapped coordinate: {0:?}")]
+    UnmappedCoordinate(Box<UnmappedCoordinateDetails>),
+
+    #[error("Data governance violation: {0:?}")]
+    DataGovernanceViolation(Box<GovernanceViolationDetails>),
 }
 
 pub type Result<T> = std::result::Result<T, PlasmidCoreError>;
