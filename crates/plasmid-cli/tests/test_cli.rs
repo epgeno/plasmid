@@ -106,8 +106,8 @@ fn test_cli_build_inspect_verify_query_e2e() {
 
     // 10. Tamper Detection Test
     let mut data = fs::read(&out_plasmid).unwrap();
-    // Tamper with payload byte inside chunk 0 (after headers)
-    let tamper_idx = 1000;
+    // Tamper with payload byte inside chunk payload (last chunk)
+    let tamper_idx = data.len() - 100;
     data[tamper_idx] ^= 0xFF;
     let tampered_path = dir.path().join("tampered.plasmid");
     fs::write(&tampered_path, data).unwrap();

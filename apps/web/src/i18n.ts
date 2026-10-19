@@ -10,6 +10,7 @@ export interface TranslationSchema {
     title: string
     subtitle: string
     tabs: {
+      navigator: string
       viewer: string
       liftover: string
       wiki: string
@@ -111,6 +112,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       title: 'Plasmid',
       subtitle: '분산형 유전체 위키 & 초고속 구간 스트리밍',
       tabs: {
+        navigator: '전장 유전체 네비게이터',
         viewer: '데이터 뷰어',
         liftover: '좌표 변환 및 검증',
         wiki: '임상 지식 위키',
@@ -210,6 +212,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       title: 'Plasmid',
       subtitle: 'Decentralized Genomic Wiki & High-Speed Range Streaming',
       tabs: {
+        navigator: 'Genome Navigator',
         viewer: 'Data Viewer',
         liftover: 'Assembly Liftover',
         wiki: 'Clinical Notes',
@@ -309,6 +312,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       title: 'Plasmid',
       subtitle: '去中心化基因组百科与高速切片流引擎',
       tabs: {
+        navigator: '全基因组导航',
         viewer: '数据查看器',
         liftover: '坐标转换与校验',
         wiki: '临床知识百科',
@@ -408,6 +412,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       title: 'Plasmid',
       subtitle: '分散型ゲノムWiki＆超高速範囲ストリーミング',
       tabs: {
+        navigator: '全ゲノムナビゲーター',
         viewer: 'データビューア',
         liftover: '座標変換・整合性検証',
         wiki: '臨床知識Wiki',

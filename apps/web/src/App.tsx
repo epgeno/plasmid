@@ -12,6 +12,7 @@ import {
   Scale,
   Star,
   Lock,
+  Compass,
 } from 'lucide-react'
 import {
   SupportedLanguage,
@@ -19,10 +20,11 @@ import {
   LOCALIZED_PRESET_VARIANTS,
   LocalizedVariant,
 } from './i18n'
+import { GenomeNavigator } from './components/GenomeNavigator'
 
 export default function App() {
   const [lang, setLang] = useState<SupportedLanguage>('ko')
-  const [activeTab, setActiveTab] = useState<'stream' | 'liftover' | 'wiki' | 'swarm' | 'governance'>('stream')
+  const [activeTab, setActiveTab] = useState<'navigator' | 'stream' | 'liftover' | 'wiki' | 'swarm' | 'governance'>('navigator')
   const [selectedVariant, setSelectedVariant] = useState<string>('braf_v600e')
   const [simulateAdversarialDrift, setSimulateAdversarialDrift] = useState<boolean>(false)
   const [verifying, setVerifying] = useState<boolean>(false)
@@ -113,6 +115,26 @@ export default function App() {
 
             {/* Navigation Tabs */}
             <nav style={{ display: 'flex', gap: '4px', backgroundColor: '#f1f5f9', padding: '4px', borderRadius: '8px' }}>
+              <button
+                onClick={() => setActiveTab('navigator')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '13px',
+                  fontWeight: activeTab === 'navigator' ? 700 : 500,
+                  backgroundColor: activeTab === 'navigator' ? '#ffffff' : 'transparent',
+                  color: activeTab === 'navigator' ? '#0f172a' : '#64748b',
+                  border: 'none',
+                  borderRadius: '6px',
+                  boxShadow: activeTab === 'navigator' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                <Compass size={15} />
+                {t.header.tabs.navigator}
+              </button>
               <button
                 onClick={() => setActiveTab('stream')}
                 style={{
@@ -259,6 +281,13 @@ export default function App() {
             </select>
           </div>
         </div>
+
+        {/* TAB 0: Multi-scale Whole-Genome Navigator */}
+        {activeTab === 'navigator' && (
+          <div style={{ marginBottom: '24px' }}>
+            <GenomeNavigator />
+          </div>
+        )}
 
         {/* TAB 1: Data Viewer (Range Slicing) */}
         {activeTab === 'stream' && (

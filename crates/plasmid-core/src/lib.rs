@@ -3,6 +3,7 @@ pub mod decoder;
 pub mod error;
 pub mod governance;
 pub mod liftover;
+pub mod pyramid;
 pub mod slicing;
 pub mod wasm;
 pub mod zero_copy;
@@ -21,6 +22,7 @@ pub use liftover::{
     AnchorSnp, CURATED_ANCHOR_SNPS, CoordinateGuard, GenomeBuild, LiftoverEngine, LiftoverInterval,
     LiftoverResult,
 };
+pub use pyramid::{ChromosomeOverview, PYRAMID_BIN_SIZE, PyramidIndex};
 pub use slicing::{ByteRange, RangePlanner, SlicingPlan, coalesce_byte_ranges};
 #[cfg(feature = "wasm")]
 pub use wasm::PlasmidWasmEngine;
