@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "plasmid-web",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-03-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "r2_buckets": [
+    {
+      "binding": "GENOME_BUCKET",
+      "bucket_name": "plasmid-data"
+    }
+  ],
+  "routes": [
+    { "pattern": "plasmid.wiki", "custom_domain": true },
+    { "pattern": "www.plasmid.wiki", "custom_domain": true }
+  ]
+}
