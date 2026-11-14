@@ -21,6 +21,7 @@ import {
   type AuditLogType,
   type WindowQueryResult,
 } from '../services/plasmidContainerClient';
+import { SupportedLanguage, TRANSLATIONS } from '../i18n';
 import type {
   AnnotationRecord,
   CatalogVariantItem,
@@ -38,7 +39,182 @@ const ORDERED_CHROMOSOMES = [
   'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY',
 ];
 
+function localizeRangeLabel(label: string, lang: SupportedLanguage): string {
+  if (lang === 'en') return label;
+  const map: Record<string, Record<'ko' | 'zh' | 'ja', string>> = {
+    'Header 128B': { ko: '헤더 128B', zh: '头部 128B', ja: 'ヘッダー 128B' },
+    'Root Directory': { ko: '루트 디렉터리', zh: '根目录', ja: 'ルートディレクトリ' },
+    'Flat Directory': { ko: '플랫 디렉터리', zh: '平面目录', ja: 'フラットディレクトリ' },
+    'Container Metadata': { ko: '컨테이너 메타데이터', zh: '容器元数据', ja: 'コンテナメタデータ' },
+  };
+  if (map[label]) return map[label][lang];
+  const leafMatch = /^Leaf Dir \((.+)\)$/.exec(label);
+  if (leafMatch) {
+    if (lang === 'ko') return `리프 디렉터리 (${leafMatch[1]})`;
+    if (lang === 'zh') return `叶目录 (${leafMatch[1]})`;
+    return `リーフディレクトリ (${leafMatch[1]})`;
+  }
+  const chunkMatch = /^Chunks? #(.+)$/.exec(label);
+  if (chunkMatch) {
+    if (lang === 'ko') return `청크 #${chunkMatch[1]}`;
+    if (lang === 'zh') return `数据块 #${chunkMatch[1]}`;
+    return `チャンク #${chunkMatch[1]}`;
+  }
+  return label;
+}
+
+function localizeAuditTypeBadge(type: AuditLogType, lang: SupportedLanguage): string {
+  if (type === 'opfs') return 'OPFS';
+  if (lang === 'ko') return type === 'network' ? '네트워크' : 'WASM';
+  if (lang === 'zh') return type === 'network' ? '网络' : 'WASM';
+  if (lang === 'ja') return type === 'network' ? '通信' : 'WASM';
+  return type.toUpperCase();
+}
+
+function localizeAuditMessage(message: string, lang: SupportedLanguage): string {
+  if (lang === 'en') return message;
+
+  let m = /^Found (.+) in OPFS\. Engaged offline Airgap slicing\.$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `OPFS에서 ${m[1]} 확인됨 — 오프라인 에어갭 슬라이싱 활성화`;
+    if (lang === 'zh') return `已在 OPFS 中找到 ${m[1]} — 已启用离线空气隔离切片`;
+    return `OPFS 内に ${m[1]} を検出 — オフラインエアギャップスライシング有効化`;
+  }
+
+  m = /^Downloading (.+) into browser OPFS sandbox\.\.\.$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `브라우저 OPFS 격리 저장소로 ${m[1]} 다운로드 중...`;
+    if (lang === 'zh') return `正在将 ${m[1]} 下载至浏览器 OPFS 沙箱...`;
+    return `${m[1]} をブラウザ OPFS サンドボックスへ保存中...`;
+  }
+
+  m = /^(.+) cached in OPFS\. Zero-network Airgap slicing engaged\.$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `${m[1]} OPFS 저장 완료 — 무네트워크 에어갭 슬라이싱 전환`;
+    if (lang === 'zh') return `${m[1]} 已缓存至 OPFS — 已切换至零网络空气隔离切片`;
+    return `${m[1]} を OPFS に保存完了 — ゼロ通信エアギャップスライシングへ切替`;
+  }
+
+  m = /^HTTP 206 \[(.+)\] (.+) \((.+) B\)$/.exec(message);
+  if (m) {
+    return `HTTP 206 [${localizeRangeLabel(m[1], lang)}] ${m[2]} (${m[3]} B)`;
+  }
+
+  m = /^HTTP 200 \[(.+)\] sliced (.+) \((.+) B of (.+) B\)$/.exec(message);
+  if (m) {
+    return `HTTP 200 [${localizeRangeLabel(m[1], lang)}] ${m[2]} (${m[3]} B / ${m[4]} B)`;
+  }
+
+  m = /^OPFS \[(.+)\] (.+) \((.+) B\)$/.exec(message);
+  if (m) {
+    return `OPFS [${localizeRangeLabel(m[1], lang)}] ${m[2]} (${m[3]} B)`;
+  }
+
+  m = /^WASM parsed \.plasmid v(\d+) \((.+), (2-stage hierarchical|flat) index, (\d+) chunks, root=(.+)\)$/.exec(message);
+  if (m) {
+    const idxKind =
+      m[3] === '2-stage hierarchical'
+        ? lang === 'ko'
+          ? '2단계 계층형 색인'
+          : lang === 'zh'
+            ? '二级分层索引'
+            : '2段階階層索引'
+        : lang === 'ko'
+          ? '플랫 색인'
+          : lang === 'zh'
+            ? '平面索引'
+            : 'フラット索引';
+    if (lang === 'ko')
+      return `WASM 헤더 파싱 완료: .plasmid v${m[1]} (${m[2]}, ${idxKind}, 청크 ${m[4]}개, 루트=${m[5]})`;
+    if (lang === 'zh')
+      return `WASM 已解析 .plasmid v${m[1]} (${m[2]}，${idxKind}，${m[4]} 个块，根=${m[5]})`;
+    return `WASM ヘッダー解析完了: .plasmid v${m[1]} (${m[2]}, ${idxKind}, ${m[4]} チャンク, ルート=${m[5]})`;
+  }
+
+  m = /^Chunk cache hit for #(.+) \(0 network bytes\)$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `청크 캐시 적중 #${m[1]} (추가 네트워크 전송 0 B)`;
+    if (lang === 'zh') return `数据块缓存命中 #${m[1]}（网络传输 0 B）`;
+    return `チャンクキャッシュ一致 #${m[1]} (通信量 0 B)`;
+  }
+
+  m = /^WASM decoded (\d+) variant\(s\), (\d+) note\(s\), SHA-256 verified (\d+) chunk\(s\)$/.exec(message);
+  if (m) {
+    if (lang === 'ko')
+      return `WASM 디코딩 완료: 변이 ${m[1]}건, 주석 ${m[2]}건, SHA-256 검증 청크 ${m[3]}개`;
+    if (lang === 'zh')
+      return `WASM 解码完成：变异 ${m[1]} 项，注释 ${m[2]} 项，SHA-256 校验 ${m[3]} 个块`;
+    return `WASM デコード完了: 変異 ${m[1]} 件, 注釈 ${m[2]} 件, SHA-256 検証 ${m[3]} チャンク`;
+  }
+
+  m = /^Jumped to indexed locus (.+) on (.+)$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `색인 구간 이동: ${m[2]} • ${m[1]}`;
+    if (lang === 'zh') return `已跳转至索引位点：${m[2]} • ${m[1]}`;
+    return `索引座位へ移動: ${m[2]} • ${m[1]}`;
+  }
+
+  m = /^Leaf directory queried: no overlapping blocks in (.+)$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `리프 디렉터리 조회 완료: ${m[1]} 구간에 겹치는 블록 없음`;
+    if (lang === 'zh') return `叶目录查询完成：${m[1]} 区间无重叠数据块`;
+    return `リーフディレクトリ照会完了: ${m[1]} に重複ブロックなし`;
+  }
+
+  m = /^Root directory miss on (.+) \(0 leaf\/chunk bytes needed\)$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `루트 디렉터리 미포함 구간: ${m[1]} (리프/청크 요청 0 B)`;
+    if (lang === 'zh') return `根目录未命中区间：${m[1]}（无需读取叶/数据块 0 B）`;
+    return `ルートディレクトリ対象外区間: ${m[1]} (追加取得 0 B)`;
+  }
+
+  m = /^WASM Liftover translated (.+) \((.+)\) -> (.+) \((.+)\)$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `WASM 좌표 변환: ${m[1]} (${m[2]}) → ${m[3]} (${m[4]})`;
+    if (lang === 'zh') return `WASM 坐标转换：${m[1]} (${m[2]}) → ${m[3]} (${m[4]})`;
+    return `WASM 座標変換: ${m[1]} (${m[2]}) → ${m[3]} (${m[4]})`;
+  }
+
+  m = /^WASM Liftover \((.+) -> (.+)\): (.+) -> (.+)$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `WASM 구간 보정 (${m[1]} → ${m[2]}): ${m[3]} → ${m[4]}`;
+    if (lang === 'zh') return `WASM 窗口换算 (${m[1]} → ${m[2]})：${m[3]} → ${m[4]}`;
+    return `WASM 区間変換 (${m[1]} → ${m[2]}): ${m[3]} → ${m[4]}`;
+  }
+
+  m = /^Liftover unmapped for (.+) \((.+)\): (.+)$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `좌표 변환 매핑 범위 밖: ${m[1]} (${m[2]})`;
+    if (lang === 'zh') return `坐标转换超出映射范围：${m[1]} (${m[2]})`;
+    return `座標変換範囲外: ${m[1]} (${m[2]})`;
+  }
+
+  m = /^Switched assembly to (.+) \((.+) unmapped: (.+)\)$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `기준 유전체 ${m[1]} 전환 (${m[2]} 매핑 범위 밖)`;
+    if (lang === 'zh') return `已切换参考基因组至 ${m[1]}（${m[2]} 未映射）`;
+    return `参照ゲノムを ${m[1]} に切替 (${m[2]} 未マップ)`;
+  }
+
+  m = /^Slice error: (.+)$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `슬라이스 오류: ${m[1]}`;
+    if (lang === 'zh') return `切片错误：${m[1]}`;
+    return `スライスエラー: ${m[1]}`;
+  }
+
+  m = /^OPFS cache error: (.+)$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `OPFS 저장 오류: ${m[1]}`;
+    if (lang === 'zh') return `OPFS 缓存错误：${m[1]}`;
+    return `OPFS 保存エラー: ${m[1]}`;
+  }
+
+  return message;
+}
+
 export interface GenomeNavigatorProps {
+  lang?: SupportedLanguage;
   catalogItems?: CatalogVariantItem[];
   selectedCatalogKey?: string | null;
   onSelectCatalogKey?: (key: string) => void;
@@ -55,10 +231,13 @@ interface IndexedHotspotChip {
 }
 
 export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
+  lang = 'ko',
   catalogItems = [],
   selectedCatalogKey,
   onSelectCatalogKey,
 }) => {
+  const nt = TRANSLATIONS[lang].navigator;
+
   const [assembly, setAssembly] = useState<GenomeAssembly>('GRCh38');
   const [selectedChrom, setSelectedChrom] = useState<string>('chr7');
   const [windowStart, setWindowStart] = useState<number>(140750000);
@@ -88,7 +267,9 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
   const [logs, setLogs] = useState<
     { id: string; timestamp: string; message: string; type: AuditLogType }[]
   >([]);
+  const [viewportEpoch, setViewportEpoch] = useState<number>(0);
 
+  const containerRootRef = useRef<HTMLDivElement | null>(null);
   const trackCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const overviewBarCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -96,6 +277,22 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Redraw all 4 canvases cleanly whenever container or viewport width changes
+  useEffect(() => {
+    const el = containerRootRef.current;
+    const bump = () => setViewportEpoch((n) => n + 1);
+    window.addEventListener('resize', bump);
+    let observer: ResizeObserver | null = null;
+    if (el && typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => bump());
+      observer.observe(el);
+    }
+    return () => {
+      window.removeEventListener('resize', bump);
+      observer?.disconnect();
+    };
+  }, []);
 
   const addLog = useCallback((message: string, type: AuditLogType) => {
     setLogs((prev) => [
@@ -109,11 +306,12 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     ]);
   }, []);
 
-  // Check OPFS cache state on mount
+  // Check OPFS cache state on mount and sync airgap flag
   useEffect(() => {
     opfs.hasFile(DEFAULT_OPFS_FILENAME).then((cached: boolean) => {
       setIsOpfsCached(cached);
       if (cached) {
+        opfs.setAirgapped(true);
         setIsAirgapped(true);
         addLog(
           `Found ${DEFAULT_OPFS_FILENAME} in OPFS. Engaged offline Airgap slicing.`,
@@ -171,17 +369,16 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     void applyJump();
   }, [selectedCatalogKey, catalogItems, assembly]);
 
-  // Active pyramid data: merge container pyramid scores when assemblies match, otherwise use WASM assembly lengths
   const activeChromosomesMap = useMemo(() => {
     const map = new Map<string, ChromosomeOverview>();
     const baseSource =
-      containerPyramid && containerPyramid.build.toUpperCase().includes(assembly === 'GRCh37' ? '37' : '38')
+      containerPyramid &&
+      containerPyramid.build.toUpperCase().includes(assembly === 'GRCh37' ? '37' : '38')
         ? containerPyramid
         : assemblyPyramid;
 
     if (baseSource) {
       for (const c of baseSource.chromosomes) {
-        // Carry over variant counts from container pyramid for chromosome-level indicator accuracy
         const containerChr = containerPyramid?.chromosomes.find(
           (cc) => cc.chrom_name === c.chrom_name
         );
@@ -189,14 +386,8 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
           ...c,
           total_variants: containerChr?.total_variants ?? c.total_variants,
           pathogenic_count: containerChr?.pathogenic_count ?? c.pathogenic_count,
-          bins:
-            baseSource === containerPyramid
-              ? c.bins
-              : c.bins,
-          max_score:
-            baseSource === containerPyramid
-              ? c.max_score
-              : c.max_score,
+          bins: c.bins,
+          max_score: c.max_score,
         });
       }
     }
@@ -207,7 +398,6 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     return activeChromosomesMap.get(selectedChrom) ?? null;
   }, [activeChromosomesMap, selectedChrom]);
 
-  // Derive Quick Jump chips strictly from real indexed .plasmid entries / root leaves (zero hardcoded loci)
   const indexedChips = useMemo<IndexedHotspotChip[]>(() => {
     if (catalogItems.length > 0) {
       return catalogItems.map((item) => ({
@@ -226,7 +416,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     const leaves = lastQueryResult?.session.rootLeaves ?? [];
     return leaves.map((leaf) => ({
       key: `${leaf.chrom_name}:${leaf.max_pos}`,
-      label: `${leaf.chrom_name} leaf (${leaf.entry_count} entries)`,
+      label: `${leaf.chrom_name} (${leaf.entry_count})`,
       chrom: leaf.chrom_name,
       pos: leaf.max_pos,
       windowStart: Math.max(1, leaf.max_pos - 3000),
@@ -234,7 +424,6 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     }));
   }, [catalogItems, lastQueryResult]);
 
-  // Switch assembly using Rust WASM LiftoverEngine
   const handleAssemblySwitch = async (newAssembly: GenomeAssembly) => {
     if (newAssembly === assembly) return;
 
@@ -265,7 +454,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
       const msg = err instanceof Error ? err.message : String(err);
       setAssembly(newAssembly);
       addLog(
-        `Switched assembly to ${newAssembly} (midpoint ${selectedChrom}:${midpoint.toLocaleString()} outside curated Liftover chain: ${msg})`,
+        `Switched assembly to ${newAssembly} (${selectedChrom}:${midpoint.toLocaleString()} unmapped: ${msg})`,
         'worker'
       );
     }
@@ -283,7 +472,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
         );
         targetPos = lifted.lifted_pos;
       } catch {
-        // Leave targetPos at container coordinate if unmapped
+        // Keep container coordinate if unmapped
       }
     }
     setSelectedChrom(chip.chrom);
@@ -310,6 +499,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
       );
 
       plasmidContainerClient.clearCache();
+      opfs.setAirgapped(true);
       setIsOpfsCached(true);
       setIsAirgapped(true);
       setCachingProgress(null);
@@ -326,7 +516,6 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     }
   };
 
-  // Query exact .plasmid byte range via 128B Header -> Root/Leaf Directory -> Chunk Range
   const fetchLocusData = useCallback(
     async (chrom: string, start: number, end: number, viewAsm: GenomeAssembly) => {
       if (abortControllerRef.current) {
@@ -409,7 +598,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     };
   }, [selectedChrom, windowStart, windowEnd, assembly, fetchLocusData]);
 
-  // Render Level 0 Karyotype Canvas from real .plasmid PyramidIndex
+  // Render Level 0 Karyotype Canvas
   useEffect(() => {
     const canvas = karyotypeCanvasRef.current;
     if (!canvas) return;
@@ -432,23 +621,23 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
       ...Array.from(activeChromosomesMap.values()).map((c) => c.length),
       248956422
     );
-    const colWidth = (width - 16) / ORDERED_CHROMOSOMES.length;
+    const padOuter = width < 420 ? 4 : 8;
+    const colWidth = (width - padOuter * 2) / ORDERED_CHROMOSOMES.length;
+    const barW = Math.min(8, Math.max(4, Math.floor(colWidth - 4)));
 
     ORDERED_CHROMOSOMES.forEach((chr, idx) => {
       const overview = activeChromosomesMap.get(chr);
       const chrLen = overview?.length ?? 100_000_000;
       const barH = Math.max(12, (chrLen / maxChromBp) * (height - 32));
-      const x = 8 + idx * colWidth + (colWidth - 8) / 2;
+      const x = padOuter + idx * colWidth + (colWidth - barW) / 2;
       const y = height - 20 - barH;
       const isSelected = chr === selectedChrom;
 
-      // Capsule body
       ctx.beginPath();
-      ctx.roundRect(x, y, 8, barH, 4);
+      ctx.roundRect(x, y, barW, barH, barW / 2);
       ctx.fillStyle = isSelected ? '#2563eb' : '#e2e8f0';
       ctx.fill();
 
-      // Real 1Mb pyramid density bin ticks inside capsule
       if (overview && overview.max_score > 0) {
         overview.bins.forEach((binScore, binIdx) => {
           if (binScore <= 0) return;
@@ -458,28 +647,26 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             : binScore >= 10
               ? '#dc2626'
               : '#d97706';
-          ctx.fillRect(x + 1, Math.min(y + barH - 2, relY), 6, 2);
+          ctx.fillRect(x + 1, Math.min(y + barH - 2, relY), Math.max(2, barW - 2), 2);
         });
       }
 
-      // Indicator dot strictly from real .plasmid PyramidIndex counts
       if (overview && overview.total_variants > 0) {
         ctx.beginPath();
-        ctx.arc(x + 4, y - 5, 2.5, 0, Math.PI * 2);
+        ctx.arc(x + barW / 2, y - 5, 2.5, 0, Math.PI * 2);
         ctx.fillStyle = overview.pathogenic_count > 0 ? '#dc2626' : '#f59e0b';
         ctx.fill();
       }
 
+      const fontSize = width < 420 ? 8 : isSelected ? 10 : 9;
       ctx.fillStyle = isSelected ? '#2563eb' : '#64748b';
-      ctx.font = isSelected
-        ? '600 10px Inter, Pretendard, sans-serif'
-        : '400 9px Inter, Pretendard, sans-serif';
+      ctx.font = `${isSelected ? 600 : 400} ${fontSize}px Inter, Pretendard, sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillText(chr.replace('chr', ''), x + 4, height - 6);
+      ctx.fillText(chr.replace('chr', ''), x + barW / 2, height - 6);
     });
-  }, [selectedChrom, activeChromosomesMap]);
+  }, [selectedChrom, activeChromosomesMap, viewportEpoch]);
 
-  // Render Level 1 Chromosome Arm Geometry & 1Mb Pyramid Density Bar (no synthetic cytobands)
+  // Render Level 1 Chromosome Arm Geometry & 1Mb Pyramid Density Bar
   useEffect(() => {
     const canvas = overviewBarCanvasRef.current;
     if (!canvas || !currentChromOverview) return;
@@ -497,14 +684,13 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     const height = rect.height;
     ctx.clearRect(0, 0, width, height);
 
-    const padX = 24;
+    const padX = width < 480 ? 12 : 24;
     const drawW = Math.max(40, width - padX * 2);
     const barH = 24;
     const barY = (height - barH) / 2;
     const chrLen = Math.max(1, currentChromOverview.length);
     const cenX = padX + (currentChromOverview.centromere / chrLen) * drawW;
 
-    // Draw p-arm and q-arm capsules meeting at real centromere coordinate
     ctx.save();
     ctx.fillStyle = '#f8fafc';
     ctx.strokeStyle = '#94a3b8';
@@ -523,11 +709,9 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     ctx.fill();
     ctx.stroke();
 
-    // Centromere marker
     ctx.fillStyle = '#cbd5e1';
     ctx.fillRect(cenX - 2, barY + 4, 4, barH - 8);
 
-    // Overlay real 1Mb PyramidIndex bins from .plasmid metadata
     const binSize = containerPyramid?.bin_size ?? 1_000_000;
     const maxScore = Math.max(1, currentChromOverview.max_score);
     currentChromOverview.bins.forEach((score, binIdx) => {
@@ -545,15 +729,13 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     });
     ctx.restore();
 
-    // Arm labels
     ctx.fillStyle = '#64748b';
     ctx.font = '500 9px ui-monospace, SFMono-Regular, monospace';
     ctx.textAlign = 'left';
-    ctx.fillText('p-arm', padX + 6, barY + 15);
+    ctx.fillText('p', padX + 7, barY + 15);
     ctx.textAlign = 'right';
-    ctx.fillText('q-arm', padX + drawW - 6, barY + 15);
+    ctx.fillText('q', padX + drawW - 7, barY + 15);
 
-    // Viewfinder Lens
     const vfX = padX + (windowStart / chrLen) * drawW;
     const vfW = Math.max(6, ((windowEnd - windowStart) / chrLen) * drawW);
 
@@ -563,7 +745,6 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     ctx.lineWidth = 2;
     ctx.strokeRect(vfX, barY - 4, vfW, barH + 8);
 
-    // Pins strictly for real decoded variants in current window
     variants.forEach((v) => {
       const lx = padX + (v.pos / chrLen) * drawW;
       ctx.beginPath();
@@ -571,15 +752,9 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
       ctx.fillStyle = v.score >= 10 ? '#dc2626' : '#f59e0b';
       ctx.fill();
     });
-  }, [
-    currentChromOverview,
-    containerPyramid,
-    windowStart,
-    windowEnd,
-    variants,
-  ]);
+  }, [currentChromOverview, containerPyramid, windowStart, windowEnd, variants, viewportEpoch]);
 
-  // Render Level 2/3 High-Resolution Track Canvas (Ruler + Real Indexed Blocks/FASTA + Decoded Variants)
+  // Render Level 2/3 High-Resolution Track Canvas (Edge-safe ruler + responsive tick count)
   useEffect(() => {
     const canvas = trackCanvasRef.current;
     if (!canvas) return;
@@ -597,12 +772,13 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     const height = rect.height;
     ctx.clearRect(0, 0, width, height);
 
-    const padLeft = 40;
-    const padRight = 40;
+    const isCompact = width < 520;
+    const padLeft = isCompact ? 16 : 40;
+    const padRight = isCompact ? 16 : 40;
     const drawW = Math.max(40, width - padLeft - padRight);
     const span = Math.max(1, windowEnd - windowStart);
 
-    // 1. Genomic Coordinate Ruler
+    // 1. Genomic Coordinate Ruler (adaptive tick count + edge-clamped textAlign)
     const rulerY = 32;
     ctx.strokeStyle = '#cbd5e1';
     ctx.lineWidth = 1;
@@ -611,7 +787,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     ctx.lineTo(width - padRight, rulerY);
     ctx.stroke();
 
-    const tickCount = 6;
+    const tickCount = drawW < 340 ? 2 : drawW < 560 ? 4 : 6;
     for (let i = 0; i <= tickCount; i++) {
       const tickBp = Math.round(windowStart + (i / tickCount) * span);
       const tx = padLeft + (i / tickCount) * drawW;
@@ -623,22 +799,28 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
       ctx.stroke();
 
       ctx.fillStyle = '#64748b';
-      ctx.font = '500 11px ui-monospace, SFMono-Regular, monospace';
-      ctx.textAlign = 'center';
+      ctx.font = isCompact
+        ? '500 10px ui-monospace, SFMono-Regular, monospace'
+        : '500 11px ui-monospace, SFMono-Regular, monospace';
+      ctx.textAlign = i === 0 ? 'left' : i === tickCount ? 'right' : 'center';
       const label =
         span < 50_000
           ? `${tickBp.toLocaleString()} bp`
-          : `${(tickBp / 1_000_000).toFixed(3)} Mb`;
+          : `${(tickBp / 1_000_000).toFixed(2)} Mb`;
       ctx.fillText(label, tx, rulerY - 10);
     }
 
     // 2. Real .plasmid Indexed Blocks & Reference Sequence Track
     const blockTrackY = 86;
     ctx.fillStyle = '#0f172a';
-    ctx.font = '600 12px Inter, Pretendard, sans-serif';
+    ctx.font = isCompact
+      ? '600 11px Inter, Pretendard, sans-serif'
+      : '600 12px Inter, Pretendard, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText(
-      `CONTAINER INDEXED BLOCKS & FASTA (${matchedEntries.length} matched in slice)`,
+      isCompact
+        ? nt.trackBlocksShort(matchedEntries.length)
+        : nt.trackBlocksTitle(matchedEntries.length),
       padLeft,
       blockTrackY - 16
     );
@@ -652,13 +834,9 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
 
     if (matchedEntries.length === 0) {
       ctx.fillStyle = '#94a3b8';
-      ctx.font = '400 12px Inter, Pretendard, sans-serif';
+      ctx.font = '400 11px Inter, Pretendard, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(
-        'No .plasmid data blocks overlap this coordinate interval.',
-        width / 2,
-        blockTrackY + 4
-      );
+      ctx.fillText(nt.noBlocksOverlap, width / 2, blockTrackY + 4, drawW);
     } else {
       matchedEntries.forEach((entry, i) => {
         const clampedStart = Math.max(windowStart, entry.start_pos);
@@ -675,58 +853,65 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
 
         ctx.fillStyle = blockColor;
         ctx.beginPath();
-        ctx.roundRect(bx - bw / 2 + bw / 2, blockTrackY - 9 + rowOffset, bw, 18, 4);
+        ctx.roundRect(bx, blockTrackY - 9 + rowOffset, bw, 18, 4);
         ctx.fill();
 
         ctx.fillStyle = '#475569';
         ctx.font = '500 10px ui-monospace, SFMono-Regular, monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(
-          `${entry.entry_type} #${entry.chunk_start} (${entry.payload_bytes}B)`,
-          Math.min(width - padRight - 40, Math.max(padLeft + 40, bx + bw / 2)),
-          blockTrackY + 22
+        const tagText = `${entry.entry_type} #${entry.chunk_start} (${entry.payload_bytes}B)`;
+        const safeCenter = Math.min(
+          width - padRight - 65,
+          Math.max(padLeft + 65, bx + bw / 2)
         );
+        ctx.fillText(tagText, safeCenter, blockTrackY + 22, drawW);
       });
     }
 
     if (referenceSequence) {
+      const maxChars = isCompact ? 24 : 60;
       const preview =
-        referenceSequence.length > 64
-          ? `${referenceSequence.slice(0, 64)}… (${referenceSequence.length} bp)`
+        referenceSequence.length > maxChars
+          ? `${referenceSequence.slice(0, maxChars)}… (${referenceSequence.length} bp)`
           : `${referenceSequence} (${referenceSequence.length} bp)`;
       ctx.fillStyle = '#0f766e';
-      ctx.font = '600 11px ui-monospace, SFMono-Regular, monospace';
+      ctx.font = '600 10px ui-monospace, SFMono-Regular, monospace';
       ctx.textAlign = 'left';
-      ctx.fillText(`FASTA: ${preview}`, padLeft, blockTrackY + 36);
+      ctx.fillText(`FASTA: ${preview}`, padLeft, blockTrackY + 36, drawW);
     }
 
     // 3. Decoded Variants Track
     const varY = 172;
     ctx.fillStyle = '#0f172a';
-    ctx.font = '600 12px Inter, Pretendard, sans-serif';
+    ctx.font = isCompact
+      ? '600 11px Inter, Pretendard, sans-serif'
+      : '600 12px Inter, Pretendard, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText(
-      `WASM DECODED VARIANTS (${variants.length} decoded in window)`,
+      isCompact
+        ? nt.trackVariantsShort(variants.length)
+        : nt.trackVariantsTitle(variants.length),
       padLeft,
       varY - 22
     );
 
     if (loadError) {
       ctx.fillStyle = '#dc2626';
-      ctx.font = '500 12px Inter, Pretendard, sans-serif';
+      ctx.font = '500 11px Inter, Pretendard, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`Slice load failed: ${loadError}`, width / 2, varY + 14);
+      ctx.fillText(`${nt.errorPrefix} ${loadError}`, width / 2, varY + 14, drawW);
     } else if (span <= 20000) {
       if (variants.length === 0) {
         ctx.fillStyle = '#94a3b8';
-        ctx.font = '400 13px Inter, Pretendard, sans-serif';
+        ctx.font = '400 12px Inter, Pretendard, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(
           lastQueryResult?.unmappedLiftoverReason
-            ? 'Window outside curated Liftover chain — switch assembly or jump to an indexed locus.'
-            : 'No variants observed in this genomic window.',
+            ? nt.unmappedLiftoverMsg
+            : nt.noVariantsMsg,
           width / 2,
-          varY + 16
+          varY + 16,
+          drawW
         );
       } else {
         variants.forEach((v) => {
@@ -765,21 +950,22 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
           ctx.lineWidth = 2;
           ctx.stroke();
 
+          const safeVx = Math.min(width - padRight - 28, Math.max(padLeft + 28, vx));
           ctx.fillStyle = '#0f172a';
           ctx.font = '600 11px ui-monospace, SFMono-Regular, monospace';
           ctx.textAlign = 'center';
-          ctx.fillText(`${v.ref}>${v.alt}`, vx, varY - 16);
+          ctx.fillText(`${v.ref}>${v.alt}`, safeVx, varY - 16);
 
           ctx.fillStyle = pinColor;
           ctx.font = '600 10px Inter, Pretendard, sans-serif';
-          ctx.fillText(v.clinvar || v.id, vx, varY + 24);
+          ctx.fillText(v.clinvar || v.id, safeVx, varY + 24);
         });
       }
     } else if (densityBins.length === 0) {
       ctx.fillStyle = '#94a3b8';
-      ctx.font = '400 13px Inter, Pretendard, sans-serif';
+      ctx.font = '400 12px Inter, Pretendard, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('No variants observed in this genomic window.', width / 2, varY + 16);
+      ctx.fillText(nt.noVariantsMsg, width / 2, varY + 16, drawW);
     } else {
       const maxCount = Math.max(1, ...densityBins.map((b) => b.count));
       const binW = drawW / Math.max(1, densityBins.length);
@@ -802,6 +988,8 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     loadError,
     selectedVariantPos,
     lastQueryResult,
+    nt,
+    viewportEpoch,
   ]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -811,8 +999,9 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const padLeft = 40;
-    const padRight = 40;
+    const isCompact = rect.width < 520;
+    const padLeft = isCompact ? 16 : 40;
+    const padRight = isCompact ? 16 : 40;
     const drawW = rect.width - padLeft - padRight;
     const span = Math.max(1, windowEnd - windowStart);
 
@@ -856,31 +1045,33 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
       ctx.stroke();
       ctx.setLineDash([]);
 
+      const badgeX = Math.min(rect.width - 56, Math.max(56, hoverPos.x));
       ctx.fillStyle = '#0f172a';
       ctx.beginPath();
-      ctx.roundRect(hoverPos.x - 52, 6, 104, 20, 4);
+      ctx.roundRect(badgeX - 52, 6, 104, 20, 4);
       ctx.fill();
 
       ctx.fillStyle = '#ffffff';
       ctx.font = '500 10px ui-monospace, SFMono-Regular, monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(`${hoverPos.bp.toLocaleString()} bp`, hoverPos.x, 20);
+      ctx.fillText(`${hoverPos.bp.toLocaleString()} bp`, badgeX, 20);
 
       if (hoveredVariant) {
         const label = `${hoveredVariant.gene ? `${hoveredVariant.gene} • ` : ''}${hoveredVariant.id} (${hoveredVariant.ref}>${hoveredVariant.alt})`;
-        const boxW = Math.max(130, label.length * 6.5);
+        const boxW = Math.min(rect.width - 16, Math.max(130, label.length * 6.5));
+        const pillX = Math.min(rect.width - boxW / 2 - 8, Math.max(boxW / 2 + 8, hoverPos.x));
         ctx.fillStyle = '#2563eb';
         ctx.beginPath();
-        ctx.roundRect(hoverPos.x - boxW / 2, 212, boxW, 22, 4);
+        ctx.roundRect(pillX - boxW / 2, 212, boxW, 22, 4);
         ctx.fill();
 
         ctx.fillStyle = '#ffffff';
         ctx.font = '600 10px Inter, Pretendard, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(label, hoverPos.x, 227);
+        ctx.fillText(label, pillX, 227, boxW - 8);
       }
     }
-  }, [hoverPos, hoveredVariant]);
+  }, [hoverPos, hoveredVariant, viewportEpoch]);
 
   const handleZoom = (factor: number) => {
     const maxLen = currentChromOverview?.length || 250_000_000;
@@ -918,7 +1109,10 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
   }, [hoveredVariant, selectedVariantPos, variants]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
+    <div
+      ref={containerRootRef}
+      style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%', minWidth: 0 }}
+    >
       {/* 1. Header Toolbar */}
       <div
         style={{
@@ -927,17 +1121,17 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
           alignItems: 'center',
           flexWrap: 'wrap',
           gap: '16px',
-          padding: '20px 24px',
+          padding: '20px',
           backgroundColor: '#ffffff',
           borderRadius: '12px',
           border: '1px solid #e2e8f0',
           boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
         }}
       >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', margin: 0 }}>
-              Multi-scale Whole-Genome Navigator
+              {nt.title}
             </h2>
             <span
               style={{
@@ -948,17 +1142,16 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                 backgroundColor: '#eff6ff',
                 color: '#2563eb',
                 border: '1px solid #bfdbfe',
+                whiteSpace: 'nowrap',
               }}
             >
-              Level {windowEnd - windowStart <= 20000 ? '3 (Base/Variant)' : '2 (Density)'}
+              {windowEnd - windowStart <= 20000 ? nt.level3Badge : nt.level2Badge}
             </span>
           </div>
-          <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>
-            128B header + 2-stage hierarchical leaf slicing with Rust/WASM decoding &amp; SHA-256 verification.
-          </p>
+          <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>{nt.subtitle}</p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <div
             style={{
               display: 'flex',
@@ -973,7 +1166,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                 key={asm}
                 onClick={() => void handleAssemblySwitch(asm)}
                 style={{
-                  padding: '6px 12px',
+                  padding: '6px 10px',
                   fontSize: '12px',
                   fontWeight: assembly === asm ? 700 : 500,
                   backgroundColor: assembly === asm ? '#ffffff' : 'transparent',
@@ -982,6 +1175,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                   border: 'none',
                   boxShadow: assembly === asm ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
                   cursor: 'pointer',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {asm} ({asm === 'GRCh38' ? 'hg38' : 'hg19'})
@@ -999,7 +1193,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '7px 14px',
+              padding: '7px 12px',
               borderRadius: '8px',
               fontSize: '12px',
               fontWeight: 600,
@@ -1007,6 +1201,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
               border: isAirgapped ? '1px solid #86efac' : '1px solid #e2e8f0',
               backgroundColor: isAirgapped ? '#f0fdf4' : '#ffffff',
               color: isAirgapped ? '#166534' : '#475569',
+              whiteSpace: 'nowrap',
             }}
           >
             {isAirgapped ? (
@@ -1014,7 +1209,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             ) : (
               <Shield size={15} color="#64748b" />
             )}
-            {isAirgapped ? 'OPFS Airgap Active' : 'Edge Range Streaming'}
+            {isAirgapped ? nt.airgapActive : nt.edgeStreaming}
           </button>
 
           {!isOpfsCached && (
@@ -1025,7 +1220,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
-                padding: '7px 14px',
+                padding: '7px 12px',
                 borderRadius: '8px',
                 fontSize: '12px',
                 fontWeight: 600,
@@ -1033,16 +1228,19 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                 border: '1px solid #2563eb',
                 backgroundColor: '#2563eb',
                 color: '#ffffff',
+                whiteSpace: 'nowrap',
               }}
             >
               <Download size={14} />
-              {cachingProgress !== null ? `Caching (${cachingProgress}%)` : 'Cache to OPFS'}
+              {cachingProgress !== null
+                ? `${nt.cachingPrefix} (${cachingProgress}%)`
+                : nt.cacheToOpfs}
             </button>
           )}
         </div>
       </div>
 
-      {/* Honest Error Banner (if network / OPFS fails) */}
+      {/* Honest Error Banner */}
       {loadError && (
         <div
           role="alert"
@@ -1050,6 +1248,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
+            flexWrap: 'wrap',
             gap: '12px',
             padding: '14px 18px',
             backgroundColor: '#fef2f2',
@@ -1059,10 +1258,10 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             fontSize: '13px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <AlertTriangle size={18} color="#dc2626" />
-            <span>
-              <strong>Container Range Slice Failed:</strong> {loadError}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+            <AlertTriangle size={18} color="#dc2626" style={{ flexShrink: 0 }} />
+            <span style={{ wordBreak: 'break-word' }}>
+              <strong>{nt.errorPrefix}</strong> {loadError}
             </span>
           </div>
           <button
@@ -1076,9 +1275,10 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
               fontWeight: 600,
               fontSize: '12px',
               cursor: 'pointer',
+              whiteSpace: 'nowrap',
             }}
           >
-            Retry
+            {nt.retryBtn}
           </button>
         </div>
       )}
@@ -1089,16 +1289,25 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          overflowX: 'auto',
+          flexWrap: 'wrap',
           padding: '4px 0',
+          maxWidth: '100%',
         }}
       >
-        <span style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', marginRight: '4px' }}>
-          Indexed Loci in .plasmid:
+        <span
+          style={{
+            fontSize: '12px',
+            fontWeight: 600,
+            color: '#64748b',
+            marginRight: '4px',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {nt.indexedLociLabel}
         </span>
         {indexedChips.length === 0 ? (
           <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-            {isLoading ? 'Reading container directory…' : 'No indexed variant leaves loaded'}
+            {isLoading ? nt.readingDirectory : nt.noLeavesLoaded}
           </span>
         ) : (
           indexedChips.map((chip) => {
@@ -1116,7 +1325,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
-                  padding: '6px 14px',
+                  padding: '6px 12px',
                   borderRadius: '9999px',
                   fontSize: '12px',
                   fontWeight: isChipActive ? 700 : 500,
@@ -1124,7 +1333,8 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                   backgroundColor: isChipActive ? '#eff6ff' : '#ffffff',
                   color: isChipActive ? '#2563eb' : '#334155',
                   cursor: 'pointer',
-                  whiteSpace: 'nowrap',
+                  maxWidth: '100%',
+                  flexWrap: 'wrap',
                 }}
               >
                 <span
@@ -1151,7 +1361,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
           backgroundColor: '#ffffff',
           borderRadius: '12px',
           border: '1px solid #e2e8f0',
-          padding: '16px 20px',
+          padding: '16px',
         }}
       >
         <div
@@ -1159,16 +1369,21 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '6px',
             marginBottom: '10px',
           }}
         >
           <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155' }}>
-            Level 0: .plasmid Pyramid Karyotype Overview ({assembly})
+            {nt.karyotypeTitle} ({assembly})
           </span>
           <span style={{ fontSize: '11px', color: '#64748b' }}>
             {containerPyramid
-              ? `${containerPyramid.total_variants} indexed variant(s), ${containerPyramid.total_pathogenic} pathogenic`
-              : 'Loading pyramid metadata…'}
+              ? nt.pyramidSummary(
+                  containerPyramid.total_variants,
+                  containerPyramid.total_pathogenic
+                )
+              : nt.loadingPyramid}
           </span>
         </div>
         <div style={{ height: '70px', width: '100%' }}>
@@ -1178,9 +1393,10 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
               const canvas = karyotypeCanvasRef.current;
               if (!canvas) return;
               const rect = canvas.getBoundingClientRect();
+              const padOuter = rect.width < 420 ? 4 : 8;
               const x = e.clientX - rect.left;
-              const colWidth = (rect.width - 16) / ORDERED_CHROMOSOMES.length;
-              const idx = Math.floor((x - 8) / colWidth);
+              const colWidth = (rect.width - padOuter * 2) / ORDERED_CHROMOSOMES.length;
+              const idx = Math.floor((x - padOuter) / colWidth);
               if (idx >= 0 && idx < ORDERED_CHROMOSOMES.length) {
                 const targetChr = ORDERED_CHROMOSOMES[idx];
                 setSelectedChrom(targetChr);
@@ -1201,7 +1417,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
           backgroundColor: '#ffffff',
           borderRadius: '12px',
           border: '1px solid #e2e8f0',
-          padding: '16px 20px',
+          padding: '16px',
         }}
       >
         <div
@@ -1214,9 +1430,9 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             gap: '8px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
-              {selectedChrom} 1Mb Pyramid Density &amp; Centromere Map
+              {selectedChrom} {nt.densityBarSuffix}
             </span>
             <span style={{ fontSize: '11px', color: '#64748b' }}>
               {currentChromOverview
@@ -1233,9 +1449,10 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
               padding: '2px 8px',
               borderRadius: '4px',
               fontWeight: 600,
+              wordBreak: 'break-word',
             }}
           >
-            Window: {windowStart.toLocaleString()} - {windowEnd.toLocaleString()} bp (
+            {nt.windowLabel}: {windowStart.toLocaleString()} - {windowEnd.toLocaleString()} bp (
             {((windowEnd - windowStart) / 1000).toFixed(1)} kb)
           </span>
         </div>
@@ -1247,7 +1464,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
               const canvas = overviewBarCanvasRef.current;
               if (!canvas || !currentChromOverview) return;
               const rect = canvas.getBoundingClientRect();
-              const padX = 24;
+              const padX = rect.width < 480 ? 12 : 24;
               const drawW = rect.width - padX * 2;
               const clickX = e.clientX - rect.left - padX;
               if (clickX >= 0 && clickX <= drawW) {
@@ -1269,7 +1486,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
           backgroundColor: '#ffffff',
           borderRadius: '12px',
           border: '1px solid #e2e8f0',
-          padding: '20px',
+          padding: '16px',
           position: 'relative',
         }}
       >
@@ -1285,9 +1502,9 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             gap: '8px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
-              High-Resolution .plasmid Slice Viewport
+              {nt.viewportTitle}
             </span>
             {isLoading && (
               <span
@@ -1299,7 +1516,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                   gap: '4px',
                 }}
               >
-                <RefreshCw size={12} /> Slicing &amp; decoding via WASM…
+                <RefreshCw size={12} /> {nt.slicingLoading}
               </span>
             )}
             {!isLoading && lastQueryResult?.slicingPlan && (
@@ -1312,24 +1529,24 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                   padding: '2px 8px',
                   borderRadius: '4px',
                   border: '1px solid #e2e8f0',
+                  wordBreak: 'break-all',
                 }}
               >
                 {lastQueryResult.slicingPlan.byte_ranges.length > 0
                   ? `Range: bytes=${lastQueryResult.slicingPlan.byte_ranges
                       .map((r) => `${r.start}-${r.end}`)
                       .join(',')}`
-                  : '0 chunks needed'}
+                  : nt.noChunksNeeded}
               </span>
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             <button
               onClick={() => {
                 setWindowStart(1);
                 setWindowEnd(200);
               }}
-              title="Jump to 1-200 bp (Reference FASTA block)"
               style={{
                 padding: '5px 10px',
                 borderRadius: '6px',
@@ -1339,13 +1556,14 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                 fontWeight: 600,
                 color: '#0f766e',
                 cursor: 'pointer',
+                whiteSpace: 'nowrap',
               }}
             >
-              1–200 bp (FASTA)
+              {nt.fastaJumpBtn}
             </button>
             <button
               onClick={() => handlePan('left')}
-              title="Pan Left"
+              title={nt.panLeft}
               style={{
                 padding: '5px 10px',
                 borderRadius: '6px',
@@ -1358,7 +1576,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             </button>
             <button
               onClick={() => handlePan('right')}
-              title="Pan Right"
+              title={nt.panRight}
               style={{
                 padding: '5px 10px',
                 borderRadius: '6px',
@@ -1369,10 +1587,10 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             >
               <ChevronRight size={15} color="#475569" />
             </button>
-            <div style={{ width: '1px', height: '16px', backgroundColor: '#e2e8f0', margin: '0 4px' }} />
+            <div style={{ width: '1px', height: '16px', backgroundColor: '#e2e8f0', margin: '0 2px' }} />
             <button
               onClick={() => handleZoom(0.5)}
-              title="Zoom In (2x)"
+              title={nt.zoomIn}
               style={{
                 padding: '5px 10px',
                 borderRadius: '6px',
@@ -1385,7 +1603,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             </button>
             <button
               onClick={() => handleZoom(2.0)}
-              title="Zoom Out (0.5x)"
+              title={nt.zoomOut}
               style={{
                 padding: '5px 10px',
                 borderRadius: '6px',
@@ -1436,7 +1654,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
         </div>
       </div>
 
-      {/* 6. Decoded Slice & Variant Inspector (Strictly Real .plasmid Data) */}
+      {/* 6. Decoded Slice & Variant Inspector */}
       <div
         style={{
           backgroundColor: '#ffffff',
@@ -1457,10 +1675,10 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                 gap: '12px',
               }}
             >
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                   <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', margin: 0 }}>
-                    {inspectedVariant.gene || 'Unannotated Gene'} • {inspectedVariant.id}
+                    {inspectedVariant.gene || nt.unannotatedGene} • {inspectedVariant.id}
                   </h3>
                   {inspectedVariant.clinvar && (
                     <span
@@ -1471,6 +1689,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                         borderRadius: '4px',
                         backgroundColor: inspectedVariant.score >= 10 ? '#fee2e2' : '#fef3c7',
                         color: inspectedVariant.score >= 10 ? '#dc2626' : '#b45309',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       {inspectedVariant.clinvar}
@@ -1494,7 +1713,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                 )}
               </div>
 
-              <div style={{ textAlign: 'right' }}>
+              <div>
                 <div
                   style={{
                     fontSize: '13px',
@@ -1507,9 +1726,9 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                   {inspectedVariant.ref} &gt; {inspectedVariant.alt})
                 </div>
                 <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                  Displayed Assembly: <strong style={{ color: '#2563eb' }}>{assembly}</strong>
+                  {nt.displayedAssembly}: <strong style={{ color: '#2563eb' }}>{assembly}</strong>
                   {lastQueryResult?.session.header.reference_build
-                    ? ` (Container: ${lastQueryResult.session.header.reference_build})`
+                    ? ` (${nt.containerLabel}: ${lastQueryResult.session.header.reference_build})`
                     : ''}
                 </div>
               </div>
@@ -1527,7 +1746,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             >
               <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
                 <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
-                  Decoded VCF INFO Attributes
+                  {nt.vcfInfoCard}
                 </div>
                 <div
                   style={{
@@ -1542,13 +1761,13 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                     ? Object.entries(inspectedVariant.info)
                         .map(([k, v]) => `${k}=${v}`)
                         .join('; ')
-                    : 'No INFO tags'}
+                    : nt.noInfoTags}
                 </div>
               </div>
 
               <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
                 <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
-                  Chunk Slicing &amp; Byte Transfer
+                  {nt.chunkTransferCard}
                 </div>
                 <div
                   style={{
@@ -1558,9 +1777,9 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                     marginTop: '4px',
                   }}
                 >
-                  Chunks: #{lastQueryResult?.slicingPlan?.chunk_indices.join(', #') || 'none'}
+                  {nt.chunksLabel}: #{lastQueryResult?.slicingPlan?.chunk_indices.join(', #') || '—'}
                   <br />
-                  Slice Size:{' '}
+                  {nt.sliceSizeLabel}:{' '}
                   {(lastQueryResult?.slicingPlan?.total_download_bytes ?? 0).toLocaleString()} B /{' '}
                   {(lastQueryResult?.session.totalFileSize ?? 0).toLocaleString()} B
                 </div>
@@ -1568,7 +1787,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
 
               <div style={{ backgroundColor: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
                 <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>
-                  WASM Chunk SHA-256 Digest
+                  {nt.chunkShaCard}
                 </div>
                 <div
                   style={{
@@ -1584,7 +1803,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                     ? chunkHashes
                         .map((c) => `#${c.chunk_index}: ${c.sha256_hex.slice(0, 24)}…`)
                         .join(' | ')
-                    : 'No chunk digest'}
+                    : nt.noChunkDigest}
                 </div>
               </div>
             </div>
@@ -1594,24 +1813,23 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px',
+              gap: '10px',
               color: '#64748b',
               fontSize: '13px',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Database size={16} color="#94a3b8" />
-              <span>
-                {loadError
-                  ? 'Unable to inspect variants until container range access succeeds.'
-                  : `No decoded VCF variants in ${selectedChrom}:${windowStart.toLocaleString()}-${windowEnd.toLocaleString()} (${assembly}).${
-                      referenceSequence
-                        ? ` Decoded ${referenceSequence.length} bp ReferenceFasta sequence.`
-                        : ''
-                    }`}
-              </span>
-            </div>
+            <Database size={16} color="#94a3b8" style={{ flexShrink: 0 }} />
+            <span style={{ wordBreak: 'break-word' }}>
+              {loadError
+                ? nt.errorInspectorMsg
+                : nt.emptyInspectorMsg(
+                    selectedChrom,
+                    windowStart.toLocaleString(),
+                    windowEnd.toLocaleString(),
+                    assembly,
+                    referenceSequence?.length
+                  )}
+            </span>
           </div>
         )}
       </div>
@@ -1622,7 +1840,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
           backgroundColor: '#ffffff',
           borderRadius: '12px',
           border: '1px solid #e2e8f0',
-          padding: '16px 20px',
+          padding: '16px',
         }}
       >
         <div
@@ -1631,6 +1849,8 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             justifyContent: 'space-between',
             alignItems: 'center',
             marginBottom: '10px',
+            flexWrap: 'wrap',
+            gap: '6px',
           }}
         >
           <span
@@ -1643,9 +1863,11 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
               gap: '6px',
             }}
           >
-            <Activity size={14} color="#2563eb" /> .plasmid Range Streaming &amp; WASM Audit Log
+            <Activity size={14} color="#2563eb" /> {nt.auditLogTitle}
           </span>
-          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Latest {logs.length} events</span>
+          <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+            {nt.latestEvents(logs.length)}
+          </span>
         </div>
         <div
           style={{
@@ -1659,11 +1881,21 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
           }}
         >
           {logs.map((log) => (
-            <div key={log.id} style={{ display: 'flex', gap: '10px', color: '#475569' }}>
-              <span style={{ color: '#94a3b8' }}>[{log.timestamp}]</span>
+            <div
+              key={log.id}
+              style={{
+                display: 'flex',
+                gap: '8px',
+                color: '#475569',
+                flexWrap: 'wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              <span style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>[{log.timestamp}]</span>
               <span
                 style={{
                   fontWeight: 600,
+                  whiteSpace: 'nowrap',
                   color:
                     log.type === 'opfs'
                       ? '#16a34a'
@@ -1672,9 +1904,11 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                         : '#d97706',
                 }}
               >
-                [{log.type.toUpperCase()}]
+                [{localizeAuditTypeBadge(log.type, lang)}]
               </span>
-              <span>{log.message}</span>
+              <span style={{ wordBreak: 'break-word' }}>
+                {localizeAuditMessage(log.message, lang)}
+              </span>
             </div>
           ))}
         </div>

@@ -58,6 +58,13 @@ export default function App() {
 
   const t = TRANSLATIONS[lang]
 
+  // Synchronize <html lang="..."> with active UI language
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = lang
+    }
+  }, [lang])
+
   // Load real .plasmid container header, index, metadata, and decoded VCF catalog on mount
   useEffect(() => {
     let cancelled = false
@@ -130,7 +137,6 @@ export default function App() {
         setLiftoverError(err instanceof Error ? err.message : String(err))
       }
 
-      // Execute real Rust/WASM CoordinateGuard::verify_ref_fingerprint
       const refAllele = current.variant.ref
       const altNeighbor = pickDifferentBase(refAllele).repeat(refAllele.length)
       const refWindow = `${refAllele}${altNeighbor}`
@@ -193,6 +199,8 @@ export default function App() {
     <div
       style={{
         minHeight: '100vh',
+        maxWidth: '100%',
+        overflowX: 'hidden',
         backgroundColor: '#ffffff',
         color: '#0f172a',
         fontFamily: 'Pretendard, system-ui, sans-serif',
@@ -203,7 +211,7 @@ export default function App() {
         style={{
           backgroundColor: '#f8fafc',
           borderBottom: '1px solid #e2e8f0',
-          padding: '8px 24px',
+          padding: '8px 16px',
         }}
       >
         <div
@@ -218,7 +226,7 @@ export default function App() {
             gap: '8px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#475569' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#475569', flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, color: '#0f172a' }}>
               {t.disclaimer.bannerTitle}:
             </span>
@@ -234,7 +242,7 @@ export default function App() {
       <header
         style={{
           borderBottom: '1px solid #e2e8f0',
-          padding: '16px 24px',
+          padding: '16px',
           backgroundColor: '#ffffff',
           position: 'sticky',
           top: 0,
@@ -262,6 +270,7 @@ export default function App() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                flexShrink: 0,
               }}
             >
               <Cpu size={20} color="#ffffff" />
@@ -297,7 +306,7 @@ export default function App() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', maxWidth: '100%' }}>
             <div
               style={{
                 display: 'flex',
@@ -333,6 +342,7 @@ export default function App() {
                 padding: '4px',
                 borderRadius: '8px',
                 flexWrap: 'wrap',
+                maxWidth: '100%',
               }}
             >
               {(
@@ -355,8 +365,8 @@ export default function App() {
                       display: 'flex',
                       alignItems: 'center',
                       gap: '6px',
-                      padding: '6px 12px',
-                      fontSize: '13px',
+                      padding: '6px 10px',
+                      fontSize: '12px',
                       fontWeight: active ? 700 : 500,
                       backgroundColor: active ? '#ffffff' : 'transparent',
                       color: active ? '#0f172a' : '#64748b',
@@ -364,9 +374,10 @@ export default function App() {
                       borderRadius: '6px',
                       boxShadow: active ? '0 1px 2px rgba(0,0,0,0.05)' : 'none',
                       cursor: 'pointer',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    <Icon size={15} />
+                    <Icon size={14} />
                     {tab.label}
                   </button>
                 )
@@ -377,8 +388,8 @@ export default function App() {
       </header>
 
       {/* Main Content Area */}
-      <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '24px' }}>
-        {/* Active Container Variant Bar (Driven 100% by Real Decoded .plasmid Entries) */}
+      <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '16px' }}>
+        {/* Active Container Variant Bar */}
         <div
           style={{
             display: 'flex',
@@ -386,14 +397,14 @@ export default function App() {
             alignItems: 'center',
             flexWrap: 'wrap',
             gap: '12px',
-            marginBottom: '24px',
+            marginBottom: '20px',
             padding: '16px',
             backgroundColor: '#f8fafc',
             border: '1px solid #e2e8f0',
             borderRadius: '8px',
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <span
               style={{
                 fontSize: '11px',
@@ -454,7 +465,15 @@ export default function App() {
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              flexWrap: 'wrap',
+              maxWidth: '100%',
+            }}
+          >
             {session && (
               <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
                 {t.locus.targetBuildPrefix}: {session.header.reference_build}
@@ -465,7 +484,8 @@ export default function App() {
                 value={current?.key ?? ''}
                 onChange={(e) => setSelectedKey(e.target.value)}
                 style={{
-                  padding: '8px 12px',
+                  maxWidth: '100%',
+                  padding: '8px 10px',
                   borderRadius: '6px',
                   border: '1px solid #cbd5e1',
                   fontSize: '13px',
@@ -492,6 +512,7 @@ export default function App() {
         {activeTab === 'navigator' && (
           <div style={{ marginBottom: '24px' }}>
             <GenomeNavigator
+              lang={lang}
               catalogItems={catalogItems}
               selectedCatalogKey={selectedKey}
               onSelectCatalogKey={setSelectedKey}
@@ -542,6 +563,7 @@ export default function App() {
                       backgroundColor: '#eff6ff',
                       color: '#2563eb',
                       borderRadius: '4px',
+                      wordBreak: 'break-word',
                     }}
                   >
                     {t.stream.savingsPrefix}: {savingsPct}% (
@@ -575,7 +597,7 @@ export default function App() {
                     }}
                   >
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>
                           {current.variant.gene || current.variant.chrom}
                         </span>
@@ -589,6 +611,7 @@ export default function App() {
                               color: current.variant.score >= 10 ? '#b91c1c' : '#b45309',
                               borderRadius: '4px',
                               fontWeight: 700,
+                              whiteSpace: 'nowrap',
                             }}
                           >
                             {current.variant.clinvar}
@@ -609,13 +632,13 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div style={{ textAlign: 'right', fontSize: '12px', color: '#475569' }}>
+                    <div style={{ fontSize: '12px', color: '#475569' }}>
                       <div style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 600 }}>
                         FILTER={current.variant.filter}
                         {current.variant.qual !== null ? ` • QUAL=${current.variant.qual}` : ''}
                       </div>
                       <span style={{ fontSize: '11px', color: '#64748b' }}>
-                        Payload {current.entry.payload_bytes} B inside 16 KB BEP 52 chunk
+                        {t.stream.payloadBadge(current.entry.payload_bytes)}
                       </span>
                     </div>
                   </div>
@@ -634,6 +657,7 @@ export default function App() {
                         padding: '12px',
                         border: '1px solid #e2e8f0',
                         borderRadius: '6px',
+                        minWidth: 0,
                       }}
                     >
                       <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>
@@ -644,6 +668,7 @@ export default function App() {
                           fontSize: '12px',
                           fontFamily: 'ui-monospace, monospace',
                           fontWeight: 600,
+                          wordBreak: 'break-all',
                         }}
                       >
                         {current.byteRangeHeader}
@@ -655,6 +680,7 @@ export default function App() {
                         padding: '12px',
                         border: '1px solid #e2e8f0',
                         borderRadius: '6px',
+                        minWidth: 0,
                       }}
                     >
                       <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>
@@ -678,6 +704,7 @@ export default function App() {
                         padding: '12px',
                         border: '1px solid #e2e8f0',
                         borderRadius: '6px',
+                        minWidth: 0,
                       }}
                     >
                       <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>
@@ -691,7 +718,7 @@ export default function App() {
                         }}
                       >
                         #{current.chunkIndices.join(', #')} (
-                        {session.header.chunk_size.toLocaleString()} B/chunk)
+                        {session.header.chunk_size.toLocaleString()} B)
                       </span>
                     </div>
 
@@ -700,13 +727,14 @@ export default function App() {
                         padding: '12px',
                         border: '1px solid #e2e8f0',
                         borderRadius: '6px',
+                        minWidth: 0,
                       }}
                     >
                       <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>
                         {t.stream.license}
                       </span>
                       <span style={{ fontSize: '12px', fontWeight: 600, color: '#16a34a' }}>
-                        {session.metadata.license || 'Unspecified in container'}
+                        {session.metadata.license || t.stream.unspecifiedLicense}
                       </span>
                     </div>
                   </div>
@@ -718,6 +746,7 @@ export default function App() {
                       borderRadius: '6px',
                       padding: '16px',
                       backgroundColor: '#f8fafc',
+                      minWidth: 0,
                     }}
                   >
                     <div
@@ -729,7 +758,7 @@ export default function App() {
                         gap: '12px',
                       }}
                     >
-                      <div>
+                      <div style={{ minWidth: 0, flex: '1 1 240px' }}>
                         <span style={{ fontSize: '11px', color: '#64748b', display: 'block' }}>
                           {t.stream.integrityTitle}
                         </span>
@@ -739,23 +768,30 @@ export default function App() {
                             fontFamily: 'ui-monospace, monospace',
                             fontWeight: 600,
                             wordBreak: 'break-all',
+                            overflowWrap: 'anywhere',
+                            display: 'block',
                           }}
                         >
-                          Header Root: 0x{session.header.root_hash_hex}
+                          {t.stream.headerRootPrefix}: 0x{session.header.root_hash_hex}
                         </span>
                         <div
                           style={{
                             display: 'flex',
-                            alignItems: 'center',
+                            alignItems: 'flex-start',
                             gap: '6px',
                             marginTop: '6px',
                           }}
                         >
                           {verifyError ? (
                             <>
-                              <ShieldAlert size={14} color="#dc2626" />
+                              <ShieldAlert size={14} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
                               <span
-                                style={{ fontSize: '11px', color: '#dc2626', fontWeight: 600 }}
+                                style={{
+                                  fontSize: '11px',
+                                  color: '#dc2626',
+                                  fontWeight: 600,
+                                  wordBreak: 'break-word',
+                                }}
                               >
                                 {verifyError}
                               </span>
@@ -763,39 +799,46 @@ export default function App() {
                           ) : merkleResult ? (
                             merkleResult.verified ? (
                               <>
-                                <CheckCircle2 size={14} color="#16a34a" />
+                                <CheckCircle2 size={14} color="#16a34a" style={{ flexShrink: 0, marginTop: '2px' }} />
                                 <span
                                   style={{
                                     fontSize: '11px',
                                     color: '#16a34a',
                                     fontWeight: 600,
+                                    wordBreak: 'break-word',
                                   }}
                                 >
-                                  {t.stream.verified} ({merkleResult.total_chunks} chunks,{' '}
-                                  {merkleResult.verified_bytes.toLocaleString()} B in{' '}
+                                  {t.stream.verified} ({merkleResult.total_chunks},{' '}
+                                  {merkleResult.verified_bytes.toLocaleString()} B,{' '}
                                   {merkleElapsedMs} ms)
                                 </span>
                               </>
                             ) : (
                               <>
-                                <ShieldAlert size={14} color="#dc2626" />
+                                <ShieldAlert size={14} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
                                 <span
                                   style={{
                                     fontSize: '11px',
                                     color: '#dc2626',
                                     fontWeight: 600,
+                                    wordBreak: 'break-all',
                                   }}
                                 >
-                                  {t.stream.failed} (calculated: 0x
-                                  {merkleResult.calculated_root_hex})
+                                  {t.stream.failed} (0x{merkleResult.calculated_root_hex})
                                 </span>
                               </>
                             )
                           ) : (
-                            <span style={{ fontSize: '11px', color: '#475569', fontWeight: 600 }}>
-                              {t.stream.pending} • Slice Chunk #
-                              {current.chunkHashes[0]?.chunk_index ?? 0} SHA-256:{' '}
-                              {current.chunkHashes[0]?.sha256_hex.slice(0, 20) ?? 'n/a'}…
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                color: '#475569',
+                                fontWeight: 600,
+                                wordBreak: 'break-all',
+                              }}
+                            >
+                              {t.stream.pending} • #{current.chunkHashes[0]?.chunk_index ?? 0}{' '}
+                              SHA-256: {current.chunkHashes[0]?.sha256_hex.slice(0, 20) ?? '—'}…
                             </span>
                           )}
                         </div>
@@ -813,6 +856,7 @@ export default function App() {
                           borderRadius: '6px',
                           cursor: verifying ? 'wait' : 'pointer',
                           color: '#0f172a',
+                          whiteSpace: 'nowrap',
                         }}
                       >
                         {verifying ? t.stream.verifyingBtn : t.stream.verifyBtn}
@@ -825,6 +869,7 @@ export default function App() {
                           marginTop: '14px',
                           paddingTop: '12px',
                           borderTop: '1px solid #e2e8f0',
+                          minWidth: 0,
                         }}
                       >
                         <span
@@ -834,15 +879,17 @@ export default function App() {
                             color: '#334155',
                             display: 'block',
                             marginBottom: '6px',
+                            wordBreak: 'break-all',
+                            overflowWrap: 'anywhere',
                           }}
                         >
-                          {t.stream.chunkDigestsTitle} (Computed Root: 0x
+                          {t.stream.chunkDigestsTitle} ({t.stream.computedRootPrefix}: 0x
                           {merkleResult.calculated_root_hex})
                         </span>
                         <div
                           style={{
                             display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
                             gap: '6px',
                             fontFamily: 'ui-monospace, monospace',
                             fontSize: '11px',
@@ -857,9 +904,10 @@ export default function App() {
                                 padding: '6px 8px',
                                 borderRadius: '4px',
                                 border: '1px solid #e2e8f0',
+                                wordBreak: 'break-all',
                               }}
                             >
-                              Chunk #{idx}: {hash.slice(0, 24)}…
+                              {t.stream.chunkPrefix} #{idx}: {hash.slice(0, 24)}…
                             </div>
                           ))}
                         </div>
@@ -872,9 +920,9 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 2: Assembly Liftover (Real WASM LiftoverEngine & CoordinateGuard) */}
+        {/* TAB 2: Assembly Liftover (Responsive Grid + Real WASM LiftoverEngine & CoordinateGuard) */}
         {activeTab === 'liftover' && (
-          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '20px' }}>
             <div
               style={{
                 display: 'flex',
@@ -943,8 +991,12 @@ export default function App() {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                      <ShieldAlert size={18} color="#dc2626" style={{ marginTop: '2px' }} />
-                      <div>
+                      <ShieldAlert
+                        size={18}
+                        color="#dc2626"
+                        style={{ marginTop: '2px', flexShrink: 0 }}
+                      />
+                      <div style={{ minWidth: 0 }}>
                         <h3
                           style={{
                             margin: '0 0 4px 0',
@@ -966,6 +1018,8 @@ export default function App() {
                             backgroundColor: '#fee2e2',
                             padding: '6px 8px',
                             borderRadius: '4px',
+                            wordBreak: 'break-word',
+                            overflowWrap: 'anywhere',
                           }}
                         >
                           {guardError || liftoverError}
@@ -984,8 +1038,12 @@ export default function App() {
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                      <ShieldCheck size={18} color="#16a34a" style={{ marginTop: '2px' }} />
-                      <div>
+                      <ShieldCheck
+                        size={18}
+                        color="#16a34a"
+                        style={{ marginTop: '2px', flexShrink: 0 }}
+                      />
+                      <div style={{ minWidth: 0 }}>
                         <h3
                           style={{
                             margin: '0 0 4px 0',
@@ -1004,14 +1062,7 @@ export default function App() {
                   </div>
                 )}
 
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr auto 1fr',
-                    gap: '20px',
-                    alignItems: 'center',
-                  }}
-                >
+                <div className="plasmid-liftover-grid">
                   <div
                     style={{
                       padding: '16px',
@@ -1035,15 +1086,15 @@ export default function App() {
                         fontSize: '16px',
                         fontWeight: 700,
                         fontFamily: 'ui-monospace, monospace',
+                        wordBreak: 'break-all',
+                        color: guardError || liftoverError ? '#dc2626' : '#0f172a',
                       }}
                     >
-                      {liftoverResult
-                        ? `${liftoverResult.lifted_chrom}:${(
-                            simulateAdversarialDrift
-                              ? liftoverResult.lifted_pos + 1
-                              : liftoverResult.lifted_pos
-                          ).toLocaleString()}`
-                        : 'Unmapped'}
+                      {guardError || liftoverError
+                        ? t.liftover.blockedLabel
+                        : liftoverResult
+                          ? `${liftoverResult.lifted_chrom}:${liftoverResult.lifted_pos.toLocaleString()}`
+                          : t.liftover.unmappedLabel}
                     </span>
                     <span
                       style={{
@@ -1053,7 +1104,8 @@ export default function App() {
                         marginTop: '4px',
                       }}
                     >
-                      Alleles: {current.variant.ref} &gt; {current.variant.alt}
+                      {t.liftover.allelesPrefix}: {current.variant.ref} &gt;{' '}
+                      {current.variant.alt}
                     </span>
                   </div>
 
@@ -1068,7 +1120,7 @@ export default function App() {
                       }}
                     >
                       {t.liftover.delta}:{' '}
-                      {liftoverResult
+                      {!guardError && !liftoverError && liftoverResult
                         ? `${Math.abs(
                             current.variant.pos - liftoverResult.lifted_pos
                           ).toLocaleString()} bp`
@@ -1099,6 +1151,7 @@ export default function App() {
                         fontSize: '16px',
                         fontWeight: 700,
                         fontFamily: 'ui-monospace, monospace',
+                        wordBreak: 'break-all',
                       }}
                     >
                       {current.variant.chrom}:{current.variant.pos.toLocaleString()}
@@ -1106,13 +1159,15 @@ export default function App() {
                     <span
                       style={{
                         fontSize: '11px',
-                        color: '#16a34a',
+                        color: guardError || liftoverError ? '#dc2626' : '#16a34a',
                         fontWeight: 600,
                         display: 'block',
                         marginTop: '4px',
                       }}
                     >
-                      {t.liftover.deltaNote}
+                      {guardError || liftoverError
+                        ? t.liftover.blockedNote
+                        : t.liftover.deltaNote}
                     </span>
                   </div>
                 </div>
@@ -1123,7 +1178,7 @@ export default function App() {
 
         {/* TAB 3: Clinical Records & Decoded Annotations */}
         {activeTab === 'wiki' && (
-          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '24px' }}>
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '20px' }}>
             {!current ? (
               <div style={{ fontSize: '13px', color: '#64748b' }}>
                 {catalogLoading ? t.locus.loadingCatalog : catalogError || t.locus.catalogEmpty}
@@ -1233,6 +1288,7 @@ export default function App() {
                           borderRadius: '6px',
                           fontFamily: 'ui-monospace, monospace',
                           fontSize: '12px',
+                          wordBreak: 'break-all',
                         }}
                       >
                         <span style={{ color: '#64748b', display: 'block', fontSize: '11px' }}>
@@ -1386,40 +1442,29 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 4: Container Merkle Geometry & Privacy Architecture (Zero Mock Peers) */}
+        {/* TAB 4: Container Merkle Geometry & Privacy Architecture */}
         {activeTab === 'swarm' && (
           <div>
             <div
               style={{
                 border: '1px solid #e2e8f0',
                 borderRadius: '8px',
-                padding: '24px',
+                padding: '20px',
                 marginBottom: '24px',
               }}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  marginBottom: '20px',
-                  flexWrap: 'wrap',
-                  gap: '12px',
-                }}
-              >
-                <div>
-                  <h2
-                    style={{
-                      fontSize: '16px',
-                      fontWeight: 700,
-                      margin: '0 0 4px 0',
-                      color: '#0f172a',
-                    }}
-                  >
-                    {t.swarm.title}
-                  </h2>
-                  <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>{t.swarm.desc}</p>
-                </div>
+              <div style={{ marginBottom: '20px' }}>
+                <h2
+                  style={{
+                    fontSize: '16px',
+                    fontWeight: 700,
+                    margin: '0 0 4px 0',
+                    color: '#0f172a',
+                  }}
+                >
+                  {t.swarm.title}
+                </h2>
+                <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>{t.swarm.desc}</p>
               </div>
 
               {session && (
@@ -1459,7 +1504,7 @@ export default function App() {
                       }}
                     >
                       {(session.totalFileSize / 1024).toFixed(2)} KB •{' '}
-                      {session.header.total_chunks} chunks ×{' '}
+                      {session.header.total_chunks} ×{' '}
                       {(session.header.chunk_size / 1024).toFixed(0)} KB
                     </span>
                   </div>
@@ -1480,7 +1525,7 @@ export default function App() {
                         display: 'block',
                       }}
                     >
-                      Directory Architecture
+                      {t.swarm.directoryArchTitle}
                     </span>
                     <span
                       style={{
@@ -1492,8 +1537,8 @@ export default function App() {
                       }}
                     >
                       {session.header.is_hierarchical
-                        ? `2-Stage PMTiles Leaf (${session.rootLeaves.length} leaves)`
-                        : 'Flat Directory Index'}
+                        ? t.swarm.hierarchicalDesc(session.rootLeaves.length)
+                        : t.swarm.flatDesc}
                     </span>
                   </div>
 
@@ -1513,7 +1558,7 @@ export default function App() {
                         display: 'block',
                       }}
                     >
-                      Generator &amp; Build
+                      {t.swarm.generatorBuildTitle}
                     </span>
                     <span
                       style={{
@@ -1531,7 +1576,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Privacy Protection Card */}
               <div
                 style={{
                   padding: '16px',
@@ -1546,11 +1590,13 @@ export default function App() {
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '8px',
                     marginBottom: '6px',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Lock size={16} color="#2563eb" />
+                    <Lock size={16} color="#2563eb" style={{ flexShrink: 0 }} />
                     <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
                       {t.swarm.privacyTitle}
                     </span>
@@ -1563,6 +1609,7 @@ export default function App() {
                       backgroundColor: '#eff6ff',
                       padding: '2px 8px',
                       borderRadius: '4px',
+                      whiteSpace: 'nowrap',
                     }}
                   >
                     {t.swarm.privacyBadge}
@@ -1596,7 +1643,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Integrity Protection Card */}
               <div
                 style={{
                   padding: '16px',
@@ -1610,6 +1656,8 @@ export default function App() {
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '8px',
                   }}
                 >
                   <div>
@@ -1635,6 +1683,7 @@ export default function App() {
                       backgroundColor: '#f0fdf4',
                       padding: '4px 8px',
                       borderRadius: '4px',
+                      whiteSpace: 'nowrap',
                     }}
                   >
                     {t.swarm.airgapBadge}
@@ -1652,7 +1701,7 @@ export default function App() {
               style={{
                 border: '1px solid #e2e8f0',
                 borderRadius: '8px',
-                padding: '24px',
+                padding: '20px',
                 marginBottom: '24px',
               }}
             >
@@ -1675,7 +1724,7 @@ export default function App() {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
                   gap: '16px',
                   marginBottom: '24px',
                 }}
@@ -1726,6 +1775,7 @@ export default function App() {
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
+                        gap: '8px',
                         marginBottom: '6px',
                       }}
                     >
@@ -1738,8 +1788,10 @@ export default function App() {
                           fontWeight: 700,
                           color: tier.color,
                           backgroundColor: tier.bg,
-                          padding: '2px 6px',
+                          padding: '2px 8px',
                           borderRadius: '4px',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
                         }}
                       >
                         {tier.status}
@@ -1831,7 +1883,7 @@ export default function App() {
       <footer
         style={{
           borderTop: '1px solid #e2e8f0',
-          padding: '24px',
+          padding: '24px 16px',
           backgroundColor: '#ffffff',
           marginTop: '40px',
         }}
@@ -1843,6 +1895,8 @@ export default function App() {
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '12px',
             fontSize: '12px',
             color: '#64748b',
           }}
