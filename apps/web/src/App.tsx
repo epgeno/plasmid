@@ -43,6 +43,75 @@ import type {
   WasmMerkleVerification,
 } from './types/plasmid'
 
+function formatVaultErrorMessage(raw: string, lang: SupportedLanguage): string {
+  const cleaned = raw
+    .replace(/^Local \.plasmid parse error:\s*/i, '')
+    .replace(/^VCF dataset parse error:\s*/i, '')
+    .replace(/^VCF parsing error:\s*/i, '')
+    .replace(/^Serialization error:\s*/i, '')
+    .trim()
+
+  if (lang === 'en') {
+    return cleaned
+  }
+
+  const extMatch = /^Unsupported file extension for "([^"]+)"/i.exec(cleaned)
+  if (extMatch) {
+    const name = extMatch[1]
+    if (lang === 'ko') {
+      return `지원하지 않는 파일 형식("${name}")입니다. 지원 형식: .vcf, .vcf.gz, .plasmid, .txt, .txt.gz`
+    }
+    if (lang === 'zh') {
+      return `不支持的文件格式（"${name}"）。支持格式：.vcf, .vcf.gz, .plasmid, .txt, .txt.gz`
+    }
+    return `未対応のファイル形式（"${name}"）です。対応形式: .vcf, .vcf.gz, .plasmid, .txt, .txt.gz`
+  }
+
+  if (/Selected genomic file is empty|buffer is empty|Decompressed \.vcf\.gz stream is empty|only null bytes/i.test(cleaned)) {
+    if (lang === 'ko') return '선택한 유전체 파일이 비어 있습니다.'
+    if (lang === 'zh') return '所选基因组文件为空。'
+    return '選択されたゲノムファイルが空です。'
+  }
+
+  if (/Invalid \.vcf\.gz stream/i.test(cleaned)) {
+    if (lang === 'ko') return '손상되었거나 유효하지 않은 .vcf.gz 압축 스트림입니다.'
+    if (lang === 'zh') return '.vcf.gz 压缩数据流损坏或无效。'
+    return '破損または無効な .vcf.gz 圧縮ストリームです。'
+  }
+
+  if (/Invalid UTF-8/i.test(cleaned)) {
+    if (lang === 'ko') return '유전체 텍스트 파일의 UTF-8 인코딩이 올바르지 않습니다.'
+    if (lang === 'zh') return '基因组文本文件的 UTF-8 编码无效。'
+    return 'ゲノムテキストファイルの UTF-8 エンコーディングが無効です。'
+  }
+
+  if (/Merkle root integrity check failed/i.test(cleaned)) {
+    if (lang === 'ko') return '.plasmid 컨테이너의 SHA-256 머클 루트 무결성 검증에 실패했습니다.'
+    if (lang === 'zh') return '.plasmid 容器的 SHA-256 默克尔根完整性校验失败。'
+    return '.plasmid コンテナの SHA-256 マークルルート整合性検証に失敗しました。'
+  }
+
+  if (/shorter than 128-byte \.plasmid header|magic|Invalid \.plasmid/i.test(cleaned)) {
+    if (lang === 'ko') return '유효한 .plasmid 바이너리 컨테이너 헤더가 아닙니다.'
+    if (lang === 'zh') return '不是有效的 .plasmid 二进制容器文件头。'
+    return '有効な .plasmid バイナリコンテナヘッダーではありません。'
+  }
+
+  if (
+    /Input contains no valid VCF header or variant records|Expected at least 8 tab-delimited columns|No valid variant records found|Invalid coordinate/i.test(
+      cleaned
+    )
+  ) {
+    if (lang === 'ko') return '유효한 VCF 헤더 또는 유전체 변이 레코드를 찾을 수 없습니다.'
+    if (lang === 'zh') return '未找到有效的 VCF 表头或基因组变异记录。'
+    return '有効な VCF ヘッダーまたはゲノム変異レコードが見つかりません。'
+  }
+
+  if (lang === 'ko') return '유전체 파일 형식을 해석할 수 없습니다.'
+  if (lang === 'zh') return '无法解析该基因组文件格式。'
+  return 'ゲノムファイル形式を解析できませんでした。'
+}
+
 export default function App() {
   const initialVaultPath = opfs.getActiveVaultPath()
   const [lang, setLang] = useState<SupportedLanguage>('ko')
@@ -127,6 +196,7 @@ export default function App() {
           })
 
         if (reqSeq !== sourceReqSeqRef.current) return
+        setNavigatorJumpTarget(null)
         setSourceMode(nextMode)
         setActiveOpfsFilename(targetFile)
         opfs.setActiveVaultPath(nextMode === 'vault' ? targetFile : null)
@@ -250,6 +320,7 @@ export default function App() {
       if (reqSeq !== sourceReqSeqRef.current) return
 
       opfs.setActiveVaultPath(savedEntry.opfsPath)
+      setNavigatorJumpTarget(null)
       setSourceMode('vault')
       setActiveOpfsFilename(savedEntry.opfsPath)
       setSession(loadedSession)
@@ -836,7 +907,8 @@ export default function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                 <AlertTriangle size={15} color="#dc2626" style={{ flexShrink: 0 }} />
                 <span style={{ wordBreak: 'break-word' }}>
-                  <strong>{t.vault.uploadErrorPrefix}</strong> {vaultError}
+                  <strong>{t.vault.uploadErrorPrefix}</strong>{' '}
+                  {formatVaultErrorMessage(vaultError, lang)}
                 </span>
               </div>
               <button
@@ -1159,7 +1231,10 @@ export default function App() {
             {catalogItems.length > 0 && (
               <select
                 value={current?.key ?? ''}
-                onChange={(e) => setSelectedKey(e.target.value)}
+                onChange={(e) => {
+                  setNavigatorJumpTarget(null)
+                  setSelectedKey(e.target.value)
+                }}
                 style={{
                   maxWidth: '100%',
                   padding: '8px 10px',
@@ -1195,8 +1270,14 @@ export default function App() {
               containerAssembly={session?.containerAssembly ?? 'GRCh38'}
               catalogItems={catalogItems}
               selectedCatalogKey={selectedKey}
-              onSelectCatalogKey={setSelectedKey}
+              onSelectCatalogKey={(key) => {
+                setNavigatorJumpTarget(null)
+                setSelectedKey(key)
+              }}
               externalJumpTarget={navigatorJumpTarget}
+              onExternalJumpConsumed={(seq) => {
+                setNavigatorJumpTarget((prev) => (prev?.seq === seq ? null : prev))
+              }}
             />
           </div>
         )}
@@ -1210,11 +1291,21 @@ export default function App() {
             error={intersectionError}
             report={intersectionReport}
             onTriggerUpload={() => fileInputRef.current?.click()}
-            onInspectInNavigator={(chrom, pos) => {
+            onInspectInNavigator={(match) => {
+              const matchedItem = catalogItems.find(
+                (item) =>
+                  item.variant.chrom === match.chrom &&
+                  (item.variant.pos === match.personal_pos ||
+                    item.variant.pos === match.pos ||
+                    (Boolean(match.rsid) && item.variant.id === match.rsid))
+              )
+              if (matchedItem) {
+                setSelectedKey(matchedItem.key)
+              }
               setActiveTab('navigator')
               setNavigatorJumpTarget((prev) => ({
-                chrom,
-                pos,
+                chrom: match.chrom,
+                pos: match.pos,
                 seq: (prev?.seq ?? 0) + 1,
               }))
             }}

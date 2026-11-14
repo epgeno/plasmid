@@ -18,7 +18,7 @@ export interface ClinVarIntersectionPanelProps {
   error: string | null;
   report: ClinVarIntersectionReport | null;
   onTriggerUpload: () => void;
-  onInspectInNavigator: (chrom: string, pos: number) => void;
+  onInspectInNavigator: (match: ClinVarMatchedVariant) => void;
 }
 
 type CategoryFilter =
@@ -711,7 +711,8 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
 
                         <button
                           type="button"
-                          onClick={() => onInspectInNavigator(m.chrom, m.pos)}
+                          data-testid="clinvar-inspect-navigator-btn"
+                          onClick={() => onInspectInNavigator(m)}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',

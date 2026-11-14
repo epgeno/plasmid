@@ -250,6 +250,7 @@ export interface GenomeNavigatorProps {
   selectedCatalogKey?: string | null;
   onSelectCatalogKey?: (key: string) => void;
   externalJumpTarget?: { chrom: string; pos: number; seq: number } | null;
+  onExternalJumpConsumed?: (seq: number) => void;
 }
 
 interface IndexedHotspotChip {
@@ -271,6 +272,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
   selectedCatalogKey,
   onSelectCatalogKey,
   externalJumpTarget = null,
+  onExternalJumpConsumed,
 }) => {
   const nt = TRANSLATIONS[lang].navigator;
   const isVaultSource = sourceMode === 'vault';
@@ -385,8 +387,14 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     };
   }, [assembly, addLog]);
 
+  const externalJumpRef = useRef(externalJumpTarget);
+  externalJumpRef.current = externalJumpTarget;
+  const onExternalJumpConsumedRef = useRef(onExternalJumpConsumed);
+  onExternalJumpConsumedRef.current = onExternalJumpConsumed;
+
   // Sync window when external catalog item is chosen in parent header
   useEffect(() => {
+    if (externalJumpRef.current) return;
     if (!selectedCatalogKey || catalogItems.length === 0) return;
     const found = catalogItems.find((item) => item.key === selectedCatalogKey);
     if (!found) return;
@@ -431,6 +439,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     if (!externalJumpTarget) return;
     let cancelled = false;
     const viewAsm = assemblyRef.current;
+    const targetSeq = externalJumpTarget.seq;
 
     const jumpToTarget = async () => {
       let targetPos = externalJumpTarget.pos;
@@ -452,6 +461,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
       setWindowStart(Math.max(1, targetPos - 3000));
       setWindowEnd(targetPos + 3000);
       setSelectedVariantPos(targetPos);
+      onExternalJumpConsumedRef.current?.(targetSeq);
     };
     void jumpToTarget();
     return () => {
