@@ -118,6 +118,31 @@ impl<R: Read + Seek> PlasmidReader<R> {
         }
     }
 
+    /// Reads all index entries across either a flat directory or all 2-stage hierarchical leaf directories.
+    pub fn read_all_entries(&mut self) -> Result<Vec<PlasmidIndexEntry>> {
+        if let Some(dir) = &self.directory {
+            return Ok(dir.entries.clone());
+        }
+
+        let leaves = self
+            .root_directory
+            .as_ref()
+            .map(|r| r.leaves.clone())
+            .unwrap_or_default();
+
+        let mut results = Vec::new();
+        for leaf in leaves {
+            self.reader.seek(SeekFrom::Start(leaf.leaf_offset))?;
+            let mut buf = vec![0u8; leaf.leaf_length as usize];
+            self.reader.read_exact(&mut buf)?;
+
+            let leaf_dir = PlasmidDirectory::deserialize(&buf)?;
+            results.extend(leaf_dir.entries);
+        }
+
+        Ok(results)
+    }
+
     /// Range query genomic coordinates supporting both flat and 2-stage hierarchical indices.
     /// In hierarchical mode, seeks and fetches ONLY the specific overlapping leaf directories.
     pub fn query_range(

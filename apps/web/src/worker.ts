@@ -3,6 +3,117 @@ export interface Env {
   GENOME_BUCKET?: R2Bucket;
 }
 
+export type ResolvedContentRange =
+  | {
+      kind: 'partial';
+      start: number;
+      end: number;
+      length: number;
+      header: string;
+    }
+  | {
+      kind: 'unsatisfiable';
+      header: string;
+    }
+  | {
+      kind: 'full';
+    };
+
+/**
+ * Computes RFC 9110 Section 14.4 `Content-Range` metadata from R2 `object.range`,
+ * `object.size`, and the incoming HTTP `Range` request header.
+ */
+export function resolveContentRange(
+  objectSize: number,
+  objectRange?: R2Range,
+  rangeHeader?: string | null
+): ResolvedContentRange {
+  const unsatisfiedHeader = `bytes */${objectSize}`;
+
+  // Validate single-range HTTP `Range: bytes=...` syntax when provided
+  if (rangeHeader) {
+    const trimmed = rangeHeader.trim();
+    if (/^bytes=/i.test(trimmed) && !trimmed.includes(',')) {
+      const spec = trimmed.slice(6).trim();
+      const match = /^(\d*)-(\d*)$/.exec(spec);
+      if (!match || (match[1] === '' && match[2] === '')) {
+        return { kind: 'unsatisfiable', header: unsatisfiedHeader };
+      }
+
+      if (objectSize === 0) {
+        return { kind: 'unsatisfiable', header: unsatisfiedHeader };
+      }
+
+      if (match[1] === '') {
+        // Suffix byte-range-spec: bytes=-<suffix>
+        const suffix = Number(match[2]);
+        if (!Number.isFinite(suffix) || suffix <= 0) {
+          return { kind: 'unsatisfiable', header: unsatisfiedHeader };
+        }
+      } else {
+        const start = Number(match[1]);
+        if (!Number.isFinite(start) || start < 0 || start >= objectSize) {
+          return { kind: 'unsatisfiable', header: unsatisfiedHeader };
+        }
+        if (match[2] !== '') {
+          const end = Number(match[2]);
+          if (!Number.isFinite(end) || end < start) {
+            return { kind: 'unsatisfiable', header: unsatisfiedHeader };
+          }
+        }
+      }
+    }
+  }
+
+  if (!objectRange) {
+    return { kind: 'full' };
+  }
+
+  if (objectSize <= 0) {
+    return { kind: 'unsatisfiable', header: unsatisfiedHeader };
+  }
+
+  if ('suffix' in objectRange) {
+    if (objectRange.suffix <= 0) {
+      return { kind: 'unsatisfiable', header: unsatisfiedHeader };
+    }
+    const length = Math.min(objectRange.suffix, objectSize);
+    const start = objectSize - length;
+    const end = objectSize - 1;
+    return {
+      kind: 'partial',
+      start,
+      end,
+      length,
+      header: `bytes ${start}-${end}/${objectSize}`,
+    };
+  }
+
+  const start = objectRange.offset ?? 0;
+  if (start < 0 || start >= objectSize) {
+    return { kind: 'unsatisfiable', header: unsatisfiedHeader };
+  }
+
+  const remaining = objectSize - start;
+  const length =
+    objectRange.length !== undefined
+      ? Math.min(objectRange.length, remaining)
+      : remaining;
+
+  if (length <= 0) {
+    return { kind: 'unsatisfiable', header: unsatisfiedHeader };
+  }
+
+  const end = start + length - 1;
+  return {
+    kind: 'partial',
+    start,
+    end,
+    length,
+    header: `bytes ${start}-${end}/${objectSize}`,
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -52,7 +163,10 @@ export default {
       object.writeHttpMetadata(headers);
       headers.set('etag', object.httpEtag);
       headers.set('access-control-allow-origin', '*');
-      headers.set('access-control-expose-headers', 'Content-Range, Content-Length, Accept-Ranges, ETag');
+      headers.set(
+        'access-control-expose-headers',
+        'Content-Range, Content-Length, Accept-Ranges, ETag'
+      );
       headers.set('accept-ranges', 'bytes');
 
       if (!('body' in object)) {
@@ -62,10 +176,33 @@ export default {
         });
       }
 
-      const status = rangeHeader ? 206 : 200;
-      return new Response(object.body, {
+      const resolvedRange = resolveContentRange(
+        object.size,
+        object.range,
+        rangeHeader
+      );
+
+      if (resolvedRange.kind === 'unsatisfiable') {
+        headers.set('content-range', resolvedRange.header);
+        return new Response(null, {
+          status: 416,
+          headers,
+        });
+      }
+
+      if (resolvedRange.kind === 'partial') {
+        headers.set('content-range', resolvedRange.header);
+        headers.set('content-length', String(resolvedRange.length));
+        return new Response(request.method === 'HEAD' ? null : object.body, {
+          headers,
+          status: 206,
+        });
+      }
+
+      headers.set('content-length', String(object.size));
+      return new Response(request.method === 'HEAD' ? null : object.body, {
         headers,
-        status,
+        status: 200,
       });
     }
 

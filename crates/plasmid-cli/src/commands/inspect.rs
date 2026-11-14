@@ -2,7 +2,7 @@ use clap::Args;
 use plasmid_core::chrom::id_to_chrom;
 use plasmid_format::{EntryType, PlasmidReader};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -37,7 +37,7 @@ struct ContainerInspection {
     metadata_offset: u64,
     metadata_length: u64,
     metadata: serde_json::Value,
-    entry_counts: HashMap<String, usize>,
+    entry_counts: BTreeMap<String, usize>,
     total_index_entries: usize,
 }
 
@@ -56,22 +56,17 @@ pub fn execute(args: InspectArgs) -> Result<(), Box<dyn std::error::Error>> {
     let meta_val: serde_json::Value =
         serde_json::from_str(&plasmid_reader.metadata_json).unwrap_or(serde_json::Value::Null);
 
-    // Collect all entries across flat or hierarchical index
-    let all_entries = if is_hierarchical {
-        plasmid_reader.query_range(0, 0, u64::MAX, None)?
-    } else if let Some(dir) = &plasmid_reader.directory {
-        dir.entries.clone()
-    } else {
-        Vec::new()
-    };
+    // Collect all entries across flat or 2-stage hierarchical leaf directories
+    let all_entries = plasmid_reader.read_all_entries()?;
 
-    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     for e in &all_entries {
         let type_name = match e.entry_type {
             EntryType::VcfVariant => "VcfVariant",
             EntryType::ReferenceFasta => "ReferenceFasta",
             EntryType::ClinVarAnnotation => "ClinVarAnnotation",
-            _ => "Unknown",
+            EntryType::CramAlignment => "CramAlignment",
+            EntryType::WikiMarkdown => "WikiMarkdown",
         };
         *counts.entry(type_name.to_string()).or_insert(0) += 1;
     }
@@ -155,7 +150,8 @@ pub fn execute(args: InspectArgs) -> Result<(), Box<dyn std::error::Error>> {
                 EntryType::VcfVariant => "VCF",
                 EntryType::ReferenceFasta => "FASTA",
                 EntryType::ClinVarAnnotation => "NOTE",
-                _ => "UNK",
+                EntryType::CramAlignment => "CRAM",
+                EntryType::WikiMarkdown => "WIKI",
             };
             let chrom_str = id_to_chrom(e.chrom_id);
             println!(

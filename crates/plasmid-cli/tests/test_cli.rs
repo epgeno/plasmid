@@ -96,13 +96,51 @@ fn test_cli_build_inspect_verify_query_e2e() {
     };
     plasmid_cli::commands::build::execute(hier_build_args).expect("build hierarchical container");
 
-    // 9. Verify Hierarchical Container
+    // 9. Verify, Inspect, and Query Hierarchical Container
     let hier_verify_args = plasmid_cli::commands::verify::VerifyArgs {
         path: out_hierarchical.clone(),
         verbose: false,
     };
     plasmid_cli::commands::verify::execute(hier_verify_args)
         .expect("verify hierarchical container integrity");
+
+    let hier_inspect_args = plasmid_cli::commands::inspect::InspectArgs {
+        path: out_hierarchical.clone(),
+        json: false,
+        entries: true,
+    };
+    plasmid_cli::commands::inspect::execute(hier_inspect_args)
+        .expect("inspect hierarchical container");
+
+    let hier_query_args = plasmid_cli::commands::query::QueryArgs {
+        path: out_hierarchical.clone(),
+        chr: "chr7".to_string(),
+        start: 140453100,
+        end: 140453200,
+        entry_type: "all".to_string(),
+        json: false,
+    };
+    plasmid_cli::commands::query::execute(hier_query_args).expect("query hierarchical container");
+
+    // Verify hierarchical reader directly reports all 4 entries and decodes BRAF variant
+    {
+        let mut h_reader =
+            plasmid_format::PlasmidReader::new(File::open(&out_hierarchical).unwrap()).unwrap();
+        assert!(h_reader.is_hierarchical());
+        let all_entries = h_reader.read_all_entries().unwrap();
+        assert_eq!(all_entries.len(), 4);
+        assert_eq!(h_reader.query_range(0, 0, u64::MAX, None).unwrap().len(), 4);
+        let decoded = plasmid_core::decoder::GenomicCoordinator::decode_slice(
+            &mut h_reader,
+            "chr7",
+            140453100,
+            140453200,
+        )
+        .unwrap();
+        assert_eq!(decoded.variants.len(), 1);
+        assert_eq!(decoded.variants[0].pos, 140453136);
+        assert_eq!(decoded.annotations.len(), 1);
+    }
 
     // 10. Tamper Detection Test
     let mut data = fs::read(&out_plasmid).unwrap();
@@ -135,4 +173,61 @@ fn test_cli_pack_validate() {
         },
     };
     plasmid_cli::commands::pack::execute(pack_args).expect("validate valid pack");
+}
+
+#[test]
+fn test_cli_vcf_batch_packing_into_16kb_chunks() {
+    let dir = tempdir().expect("create tempdir");
+    let vcf_path = dir.path().join("packed.vcf");
+    let mut vcf_file = File::create(&vcf_path).unwrap();
+    writeln!(vcf_file, "##fileformat=VCFv4.2").unwrap();
+    writeln!(vcf_file, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO").unwrap();
+
+    // Write 100 variants on chr7 (~75 bytes each -> ~7.5 KB total, must fit in 1 single 16KB chunk!)
+    for i in 0..100u64 {
+        let pos = 140_450_000 + i * 100;
+        writeln!(
+            vcf_file,
+            "chr7\t{pos}\trs{i}\tA\tG\t100\tPASS\tGENE=BRAF;CLNSIG=Pathogenic"
+        )
+        .unwrap();
+    }
+
+    let out_plasmid = dir.path().join("packed.plasmid");
+    let build_args = plasmid_cli::commands::build::BuildArgs {
+        vcf: Some(vcf_path),
+        fasta: None,
+        annotation: None,
+        output: out_plasmid.clone(),
+        reference: "GRCh38".to_string(),
+        hierarchical: true,
+        entries_per_leaf: 16,
+        metadata: None,
+    };
+    plasmid_cli::commands::build::execute(build_args).expect("build packed hierarchical container");
+
+    let mut reader = plasmid_format::PlasmidReader::new(File::open(&out_plasmid).unwrap()).unwrap();
+    assert_eq!(
+        reader.header.total_chunks, 1,
+        "100 small VCF lines on chr7 must pack into 1 x 16KB chunk instead of 100 chunks"
+    );
+    let entries = reader.read_all_entries().unwrap();
+    assert_eq!(entries.len(), 1);
+    let payload = reader.read_entry_payload(&entries[0]).unwrap();
+    let payload_str = std::str::from_utf8(&payload).unwrap();
+    assert_eq!(payload_str.lines().count(), 100);
+    assert!(payload_str.ends_with('\n'));
+
+    // Sub-range query must return only variants overlapping 140_450_200..=140_450_450 (i = 2, 3, 4)
+    let sub_slice = plasmid_core::decoder::GenomicCoordinator::decode_slice(
+        &mut reader,
+        "chr7",
+        140_450_200,
+        140_450_450,
+    )
+    .unwrap();
+    assert_eq!(sub_slice.variants.len(), 3);
+    assert_eq!(sub_slice.variants[0].pos, 140_450_200);
+    assert_eq!(sub_slice.variants[1].pos, 140_450_300);
+    assert_eq!(sub_slice.variants[2].pos, 140_450_400);
 }
