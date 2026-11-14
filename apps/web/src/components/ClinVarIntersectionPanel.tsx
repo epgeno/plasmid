@@ -1,11 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Activity,
   AlertTriangle,
   Compass,
+  Database,
   ExternalLink,
   Search,
   ShieldCheck,
   Star,
+  Stethoscope,
   Upload,
 } from 'lucide-react';
 import { SupportedLanguage, TRANSLATIONS } from '../i18n';
@@ -40,7 +43,8 @@ function renderStars(stars: number): React.ReactNode {
           key={idx}
           size={12}
           color={idx < clamped ? '#d97706' : '#cbd5e1'}
-          fill={idx < clamped ? '#f59e0b' : 'none'}
+          fill="none"
+          strokeWidth={idx < clamped ? 2.5 : 1.75}
         />
       ))}
     </span>
@@ -55,15 +59,15 @@ function getSignificanceBadgeStyle(category: string): {
   switch (category) {
     case 'pathogenic':
     case 'oncogenic':
-      return { bg: '#fef2f2', fg: '#991b1b', border: '#fecaca' };
+      return { bg: '#fff1f2', fg: '#be123c', border: '#fecdd3' };
     case 'likely_pathogenic':
       return { bg: '#fff7ed', fg: '#9a3412', border: '#fed7aa' };
     case 'drug_response':
       return { bg: '#eff6ff', fg: '#1d4ed8', border: '#bfdbfe' };
     case 'risk_factor':
-      return { bg: '#fefce8', fg: '#854d0e', border: '#fde047' };
+      return { bg: '#fefce8', fg: '#854d0e', border: '#fef08a' };
     default:
-      return { bg: '#f1f5f9', fg: '#334155', border: '#cbd5e1' };
+      return { bg: '#f8fafc', fg: '#334155', border: '#e2e8f0' };
   }
 }
 
@@ -77,6 +81,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
   onInspectInNavigator,
 }) => {
   const it = TRANSLATIONS[lang].intersection;
+  const wt = TRANSLATIONS[lang].workspace;
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [minStars, setMinStars] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -119,6 +124,39 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
     });
   }, [report, categoryFilter, minStars, searchQuery]);
 
+  const ringArcs = useMemo(() => {
+    if (!report) return [];
+    const radius = 32;
+    const circumference = 2 * Math.PI * radius;
+    const total = Math.max(1, report.total_personal_variants);
+    const pathogenic = report.pathogenic_count + report.likely_pathogenic_count;
+    const pharmaco = report.drug_response_count + report.risk_factor_count;
+    const otherMatched = Math.max(0, report.matched_count - pathogenic - pharmaco);
+    const remaining = Math.max(0, report.total_personal_variants - report.matched_count);
+
+    const segments = [
+      { key: 'pathogenic', value: pathogenic, color: '#be123c' },
+      { key: 'pharmaco', value: pharmaco, color: '#2563eb' },
+      { key: 'other', value: otherMatched, color: '#0d9488' },
+      { key: 'remaining', value: remaining, color: '#e2e8f0' },
+    ];
+
+    let offset = 0;
+    return segments
+      .filter((s) => s.value > 0)
+      .map((s) => {
+        const len = (s.value / total) * circumference;
+        const arc = {
+          key: s.key,
+          color: s.color,
+          dashArray: `${len} ${circumference}`,
+          dashOffset: -offset,
+        };
+        offset += len;
+        return arc;
+      });
+  }, [report]);
+
   const formatZygosity = (z: string): string => {
     switch (z) {
       case 'Heterozygous':
@@ -137,11 +175,12 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
       data-testid="clinvar-intersection-panel"
       style={{
         border: '1px solid #e2e8f0',
-        borderRadius: '10px',
-        padding: '20px',
+        borderRadius: '12px',
+        padding: '18px',
         backgroundColor: '#ffffff',
         marginBottom: '24px',
         minWidth: 0,
+        boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)',
       }}
     >
       {/* Header */}
@@ -152,16 +191,18 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
           alignItems: 'flex-start',
           flexWrap: 'wrap',
           gap: '12px',
-          marginBottom: '18px',
+          marginBottom: '16px',
         }}
       >
-        <div style={{ minWidth: 0, flex: '1 1 280px' }}>
+        <div style={{ minWidth: 0, flex: '1 1 260px' }}>
           <h2
+            className="cjk-keep"
             style={{
               fontSize: '17px',
               fontWeight: 800,
               margin: '0 0 6px 0',
               color: '#0f172a',
+              letterSpacing: '-0.02em',
             }}
           >
             {it.title}
@@ -179,13 +220,13 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
             gap: '6px',
             padding: '5px 10px',
             borderRadius: '9999px',
-            backgroundColor: '#dcfce7',
+            backgroundColor: '#f0fdf4',
             color: '#166534',
-            border: '1px solid #86efac',
+            border: '1px solid #bbf7d0',
             fontSize: '11px',
             fontWeight: 700,
-            whiteSpace: 'nowrap',
             maxWidth: '100%',
+            wordBreak: 'break-word',
           }}
         >
           <ShieldCheck size={14} style={{ flexShrink: 0 }} />
@@ -197,14 +238,17 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
         <div
           data-testid="clinvar-empty-state"
           style={{
-            padding: '28px 20px',
-            borderRadius: '8px',
+            padding: '28px 18px',
+            borderRadius: '10px',
             backgroundColor: '#f8fafc',
             border: '1.5px dashed #cbd5e1',
             textAlign: 'center',
           }}
         >
-          <h3 style={{ margin: '0 0 8px 0', fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+          <h3
+            className="cjk-keep"
+            style={{ margin: '0 0 8px 0', fontSize: '15px', fontWeight: 700, color: '#0f172a' }}
+          >
             {it.emptyTitle}
           </h3>
           <p
@@ -227,17 +271,18 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
               alignItems: 'center',
               gap: '8px',
               padding: '9px 16px',
-              borderRadius: '6px',
-              border: '1px solid #2563eb',
-              backgroundColor: '#2563eb',
+              borderRadius: '8px',
+              border: '1px solid #0f172a',
+              backgroundColor: '#0f172a',
               color: '#ffffff',
               fontSize: '13px',
               fontWeight: 600,
               cursor: 'pointer',
+              maxWidth: '100%',
             }}
           >
-            <Upload size={15} />
-            <span>{it.uploadCtaBtn}</span>
+            <Upload size={15} style={{ flexShrink: 0 }} />
+            <span style={{ wordBreak: 'break-word' }}>{it.uploadCtaBtn}</span>
           </button>
         </div>
       ) : loading ? (
@@ -245,7 +290,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
           data-testid="clinvar-loading-state"
           style={{
             padding: '24px',
-            borderRadius: '8px',
+            borderRadius: '10px',
             backgroundColor: '#f8fafc',
             border: '1px solid #e2e8f0',
             fontSize: '13px',
@@ -264,10 +309,10 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
             alignItems: 'center',
             gap: '8px',
             padding: '14px 16px',
-            borderRadius: '8px',
-            backgroundColor: '#fef2f2',
-            border: '1px solid #fecaca',
-            color: '#991b1b',
+            borderRadius: '10px',
+            backgroundColor: '#fff1f2',
+            border: '1px solid #fecdd3',
+            color: '#be123c',
             fontSize: '13px',
           }}
         >
@@ -276,35 +321,162 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
         </div>
       ) : report ? (
         <>
-          {/* Summary Telemetry Cards */}
+          {/* Function-Inspired SVG Ring + Structured Breakdown Row */}
           <div
-            data-testid="clinvar-summary-cards"
             style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: '12px',
-              marginBottom: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '16px',
+              padding: '14px',
+              borderRadius: '10px',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              marginBottom: '14px',
+              minWidth: 0,
             }}
           >
             <div
               style={{
-                padding: '14px',
+                position: 'relative',
+                width: '78px',
+                height: '78px',
+                flexShrink: 0,
+              }}
+            >
+              <svg width="78" height="78" viewBox="0 0 78 78" fill="none" aria-hidden="true">
+                <circle cx="39" cy="39" r="32" stroke="#e2e8f0" strokeWidth="7" fill="none" />
+                <g transform="rotate(-90 39 39)">
+                  {ringArcs.map((arc) => (
+                    <circle
+                      key={arc.key}
+                      cx="39"
+                      cy="39"
+                      r="32"
+                      stroke={arc.color}
+                      strokeWidth="7"
+                      strokeDasharray={arc.dashArray}
+                      strokeDashoffset={arc.dashOffset}
+                      strokeLinecap="butt"
+                      fill="none"
+                    />
+                  ))}
+                </g>
+              </svg>
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  pointerEvents: 'none',
+                }}
+              >
+                <span
+                  className="tabular-nums"
+                  style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', lineHeight: 1.1 }}
+                >
+                  {report.matched_count}
+                </span>
+                <span style={{ fontSize: '9px', fontWeight: 600, color: '#64748b' }}>
+                  {wt.bentoRingMatched}
+                </span>
+              </div>
+            </div>
+
+            <div
+              style={{
+                flex: '1 1 220px',
+                minWidth: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '12px',
+                }}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#334155', fontWeight: 500 }}>
+                  <Database size={13} color="#64748b" />
+                  <span>{wt.bentoRowTotalPersonal}</span>
+                </span>
+                <span className="tabular-nums" style={{ fontWeight: 700, color: '#0f172a' }}>
+                  {report.total_personal_variants.toLocaleString()} ({report.personal_build})
+                </span>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '12px',
+                }}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#334155', fontWeight: 500 }}>
+                  <Stethoscope size={13} color="#2563eb" />
+                  <span>{wt.bentoRowClinvarMatch}</span>
+                </span>
+                <span className="tabular-nums" style={{ fontWeight: 700, color: '#0f172a' }}>
+                  {report.matched_count.toLocaleString()} / {report.clinvar_variants_scanned.toLocaleString()}
+                </span>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '12px',
+                }}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#334155', fontWeight: 500 }}>
+                  <Activity size={13} color="#be123c" />
+                  <span>{wt.bentoRowActionable}</span>
+                </span>
+                <span className="tabular-nums" style={{ fontWeight: 700, color: '#0f172a' }}>
+                  {report.pathogenic_count + report.likely_pathogenic_count} ·{' '}
+                  {report.drug_response_count + report.risk_factor_count}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Plausible-style Summary Telemetry Cards */}
+          <div data-testid="clinvar-summary-cards" className="plasmid-clinvar-kpi-grid">
+            <div
+              style={{
+                padding: '12px',
                 borderRadius: '8px',
                 border: '1px solid #e2e8f0',
-                backgroundColor: '#f8fafc',
+                backgroundColor: '#ffffff',
                 minWidth: 0,
               }}
             >
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', display: 'block' }}>
+              <span
+                className="cjk-keep"
+                style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block' }}
+              >
                 {it.cardMatchedTitle}
               </span>
               <div
                 data-testid="clinvar-matched-count"
+                className="tabular-nums"
                 style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}
               >
                 {report.matched_count}
               </div>
-              <span style={{ fontSize: '11px', color: '#475569' }}>
+              <span className="tabular-nums cjk-keep" style={{ fontSize: '11px', color: '#64748b' }}>
                 {it.cardMatchedSub(
                   report.carrier_personal_variants,
                   report.total_personal_variants
@@ -314,47 +486,59 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
 
             <div
               style={{
-                padding: '14px',
+                padding: '12px',
                 borderRadius: '8px',
-                border: '1px solid #fecaca',
-                backgroundColor: '#fef2f2',
+                border: '1px solid #e2e8f0',
+                backgroundColor: '#ffffff',
                 minWidth: 0,
               }}
             >
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#991b1b', display: 'block' }}>
+              <span
+                className="cjk-keep"
+                style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block' }}
+              >
                 {it.cardPathogenicTitle}
               </span>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: '#b91c1c', marginTop: '2px' }}>
+              <div
+                className="tabular-nums"
+                style={{ fontSize: '22px', fontWeight: 800, color: '#be123c', marginTop: '2px' }}
+              >
                 {report.pathogenic_count + report.likely_pathogenic_count}
               </div>
-              <span style={{ fontSize: '11px', color: '#991b1b' }}>
+              <span className="tabular-nums cjk-keep" style={{ fontSize: '11px', color: '#64748b' }}>
                 {it.cardPathogenicSub(report.pathogenic_count, report.likely_pathogenic_count)}
               </span>
             </div>
 
             <div
               style={{
-                padding: '14px',
+                padding: '12px',
                 borderRadius: '8px',
-                border: '1px solid #bfdbfe',
-                backgroundColor: '#eff6ff',
+                border: '1px solid #e2e8f0',
+                backgroundColor: '#ffffff',
                 minWidth: 0,
               }}
             >
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#1e40af', display: 'block' }}>
+              <span
+                className="cjk-keep"
+                style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block' }}
+              >
                 {it.cardPharmacoTitle}
               </span>
-              <div style={{ fontSize: '22px', fontWeight: 800, color: '#1d4ed8', marginTop: '2px' }}>
+              <div
+                className="tabular-nums"
+                style={{ fontSize: '22px', fontWeight: 800, color: '#1d4ed8', marginTop: '2px' }}
+              >
                 {report.drug_response_count + report.risk_factor_count}
               </div>
-              <span style={{ fontSize: '11px', color: '#1e40af' }}>
+              <span className="tabular-nums cjk-keep" style={{ fontSize: '11px', color: '#64748b' }}>
                 {it.cardPharmacoSub(report.drug_response_count, report.risk_factor_count)}
               </span>
             </div>
 
             <div
               style={{
-                padding: '14px',
+                padding: '12px',
                 borderRadius: '8px',
                 border: '1px solid #bbf7d0',
                 backgroundColor: '#f0fdf4',
@@ -365,17 +549,21 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                 {it.cardSlicingTitle}
               </span>
               <div
+                className="tabular-nums"
                 style={{
-                  fontSize: '18px',
+                  fontSize: '16px',
                   fontWeight: 800,
                   color: '#15803d',
                   marginTop: '4px',
                   fontFamily: 'ui-monospace, monospace',
                 }}
               >
-                {report.personalBytesSent} B Egress • {report.elapsedMs} ms
+                {report.personalBytesSent} B · {report.elapsedMs} ms
               </div>
-              <span style={{ fontSize: '11px', color: '#166534', wordBreak: 'break-word' }}>
+              <span
+                className="tabular-nums"
+                style={{ fontSize: '11px', color: '#166534', wordBreak: 'break-word' }}
+              >
                 {it.cardSlicingSub(
                   report.clinvarChunksAccessed.length,
                   (report.clinvarBytesFetched / 1024).toFixed(1),
@@ -391,7 +579,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
               style={{
                 marginBottom: '14px',
                 padding: '10px 12px',
-                borderRadius: '6px',
+                borderRadius: '8px',
                 backgroundColor: '#eff6ff',
                 border: '1px solid #bfdbfe',
                 color: '#1e3a8a',
@@ -417,12 +605,12 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
               gap: '10px',
               marginBottom: '16px',
               padding: '12px',
-              borderRadius: '8px',
+              borderRadius: '10px',
               backgroundColor: '#f8fafc',
               border: '1px solid #e2e8f0',
             }}
           >
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', minWidth: 0 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', minWidth: 0, maxWidth: '100%' }}>
               {(
                 [
                   { id: 'all', label: `${it.filterAll} (${report.matched_count})` },
@@ -451,6 +639,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                     type="button"
                     data-testid={`clinvar-filter-${pill.id}`}
                     onClick={() => setCategoryFilter(pill.id)}
+                    className="tabular-nums"
                     style={{
                       padding: '5px 10px',
                       borderRadius: '9999px',
@@ -460,7 +649,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                       backgroundColor: active ? '#0f172a' : '#ffffff',
                       color: active ? '#ffffff' : '#334155',
                       cursor: 'pointer',
-                      whiteSpace: 'nowrap',
+                      maxWidth: '100%',
                     }}
                   >
                     {pill.label}
@@ -475,9 +664,10 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                 alignItems: 'center',
                 flexWrap: 'wrap',
                 gap: '8px',
-                flex: '1 1 240px',
+                flex: '1 1 220px',
                 justifyContent: 'flex-end',
                 minWidth: 0,
+                maxWidth: '100%',
               }}
             >
               <select
@@ -493,12 +683,13 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                   fontSize: '12px',
                   fontWeight: 600,
                   color: '#0f172a',
+                  maxWidth: '100%',
                 }}
               >
                 <option value={0}>{it.starsAll}</option>
-                <option value={1}>★1+</option>
-                <option value={2}>★★2+</option>
-                <option value={3}>★★★3+</option>
+                <option value={1}>1+ / 4</option>
+                <option value={2}>2+ / 4</option>
+                <option value={3}>3+ / 4</option>
               </select>
 
               <div
@@ -506,9 +697,9 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                   position: 'relative',
                   display: 'flex',
                   alignItems: 'center',
-                  flex: '1 1 180px',
-                  maxWidth: '300px',
+                  flex: '1 1 170px',
                   minWidth: 0,
+                  maxWidth: '100%',
                 }}
               >
                 <Search
@@ -568,7 +759,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                     data-rsid={m.rsid}
                     style={{
                       padding: '14px 16px',
-                      borderRadius: '8px',
+                      borderRadius: '10px',
                       border: '1px solid #e2e8f0',
                       backgroundColor: '#ffffff',
                       minWidth: 0,
@@ -583,7 +774,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                         gap: '10px',
                       }}
                     >
-                      <div style={{ minWidth: 0, flex: '1 1 240px' }}>
+                      <div style={{ minWidth: 0, flex: '1 1 220px' }}>
                         <div
                           style={{
                             display: 'flex',
@@ -607,7 +798,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                               fontSize: '11px',
                               fontWeight: 700,
                               padding: '2px 8px',
-                              borderRadius: '4px',
+                              borderRadius: '9999px',
                               backgroundColor: badge.bg,
                               color: badge.fg,
                               border: `1px solid ${badge.border}`,
@@ -618,6 +809,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                           </span>
 
                           <span
+                            className="tabular-nums"
                             style={{
                               display: 'inline-flex',
                               alignItems: 'center',
@@ -629,16 +821,17 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                             title={m.review_status}
                           >
                             {renderStars(m.review_stars)}
-                            <span>({m.review_stars}/4★)</span>
+                            <span>({m.review_stars}/4)</span>
                           </span>
                         </div>
 
                         <div
+                          className="tabular-nums"
                           style={{
                             display: 'flex',
                             alignItems: 'center',
                             flexWrap: 'wrap',
-                            gap: '8px',
+                            gap: '6px',
                             marginTop: '6px',
                             fontSize: '12px',
                             color: '#475569',
@@ -646,13 +839,13 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                           }}
                         >
                           <span>{m.rsid}</span>
-                          <span>•</span>
+                          <span>·</span>
                           <span>
                             {m.chrom}:{m.pos.toLocaleString()} ({m.reference}&gt;{m.alternate})
                           </span>
                           {m.hgvs && (
                             <>
-                              <span>•</span>
+                              <span>·</span>
                               <span style={{ wordBreak: 'break-all' }}>{m.hgvs}</span>
                             </>
                           )}
@@ -666,19 +859,22 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                           alignItems: 'center',
                           flexWrap: 'wrap',
                           gap: '8px',
+                          maxWidth: '100%',
                         }}
                       >
                         <span
+                          className="tabular-nums"
                           style={{
                             fontSize: '11px',
                             fontWeight: 700,
                             fontFamily: 'ui-monospace, monospace',
                             padding: '4px 8px',
                             borderRadius: '6px',
-                            backgroundColor: '#f1f5f9',
+                            backgroundColor: '#f8fafc',
                             color: '#0f172a',
                             border: '1px solid #cbd5e1',
-                            whiteSpace: 'nowrap',
+                            maxWidth: '100%',
+                            wordBreak: 'break-word',
                           }}
                         >
                           {it.genotypeLabel}: {m.personal_genotype} ({formatZygosity(m.zygosity)})
@@ -797,6 +993,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
 
                       {m.lifted_from_build && (
                         <span
+                          className="tabular-nums"
                           style={{
                             fontSize: '11px',
                             padding: '2px 7px',

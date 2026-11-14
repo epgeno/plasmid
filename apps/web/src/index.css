@@ -4,23 +4,321 @@
   padding: 0;
 }
 
+:root {
+  --surface-canvas: #ffffff;
+  --surface-rail: #f8fafc;
+  --surface-subtle: #f8fafc;
+  --surface-elevated: #ffffff;
+  --border-hairline: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --accent-blue: #2563eb;
+  --accent-blue-soft: #eff6ff;
+  --clinical-rose: #be123c;
+  --clinical-rose-bg: #fff1f2;
+  --clinical-rose-border: #fecdd3;
+  --clinical-amber: #9a3412;
+  --clinical-amber-bg: #fff7ed;
+  --clinical-amber-border: #fed7aa;
+  --clinical-emerald: #166534;
+  --clinical-emerald-bg: #f0fdf4;
+  --clinical-emerald-border: #bbf7d0;
+}
+
 html,
 body {
   max-width: 100%;
   overflow-x: hidden;
+  background-color: var(--surface-canvas);
+  color: var(--text-primary);
 }
 
 body {
   font-family: "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans CJK JP", "Noto Sans SC", system-ui, Roboto, sans-serif;
-  background-color: #ffffff;
-  color: #0f172a;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
+button,
+a {
+  text-decoration: none;
+  font-family: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.cjk-keep {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* =========================================================================
+   Perplexity Health 3-Column Workspace (>=1200px) & Adaptive Mobile (<1200px)
+   ========================================================================= */
+
+.plasmid-workspace {
+  min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  background-color: var(--surface-canvas);
+}
+
+@media (min-width: 1200px) {
+  .plasmid-workspace {
+    display: grid;
+    grid-template-columns: var(--left-rail-w, 236px) minmax(0, 1fr) 332px;
+    grid-template-areas: "nav canvas vault";
+    align-items: start;
+  }
+
+  .plasmid-workspace.rail-collapsed {
+    --left-rail-w: 68px;
+  }
+
+  .plasmid-left-rail {
+    grid-area: nav;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    background-color: var(--surface-rail);
+    border-right: 1px solid var(--border-hairline);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 16px 12px;
+    gap: 16px;
+    z-index: 20;
+  }
+
+  .plasmid-center-canvas {
+    grid-area: canvas;
+    min-width: 0;
+    width: 100%;
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 0 24px 48px 24px;
+    background-color: var(--surface-canvas);
+  }
+
+  .plasmid-right-rail {
+    grid-area: vault;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    background-color: var(--surface-rail);
+    border-left: 1px solid var(--border-hairline);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+
+  .plasmid-mobile-only {
+    display: none !important;
+  }
+}
+
+@media (min-width: 1440px) {
+  .plasmid-workspace {
+    grid-template-columns: var(--left-rail-w, 244px) minmax(0, 1fr) 348px;
+  }
+}
+
+@media (max-width: 1199px) {
+  .plasmid-workspace {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .plasmid-left-rail {
+    order: 1;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background-color: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border-hairline);
+    padding: 8px 12px 0 12px;
+  }
+
+  .plasmid-right-rail {
+    order: 2;
+    padding: 8px 12px 0 12px;
+    background-color: var(--surface-canvas);
+    min-width: 0;
+  }
+
+  .plasmid-center-canvas {
+    order: 3;
+    min-width: 0;
+    width: 100%;
+    padding: 8px 12px 32px 12px;
+  }
+
+  .plasmid-desktop-only {
+    display: none !important;
+  }
+}
+
+/* Mobile & Tablet Horizontal Scrollbars Hidden Cleanly */
+.plasmid-scroll-strip {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  max-width: 100%;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.plasmid-scroll-strip::-webkit-scrollbar {
+  display: none;
+}
+
+/* Command Search Bar */
+.plasmid-command-bar {
+  position: sticky;
+  top: 0;
+  z-index: 15;
+  background-color: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  padding: 12px 0;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border-hairline);
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+@media (max-width: 1199px) {
+  .plasmid-command-bar {
+    position: relative;
+    top: auto;
+    padding: 6px 0 10px 0;
+    margin-bottom: 10px;
+  }
+}
+
+@media (max-width: 720px) {
+  .plasmid-command-bar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+}
+
+/* Function Clinical Summary Bento */
+.plasmid-bento-card {
+  border: 1px solid var(--border-hairline);
+  border-radius: 12px;
+  background-color: var(--surface-elevated);
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  min-width: 0;
+}
+
+.plasmid-bento-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+
+.plasmid-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.plasmid-clinvar-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+  .plasmid-bento-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .plasmid-clinvar-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+
+@media (max-width: 640px) {
+  .plasmid-bento-card {
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+
+  .plasmid-bento-layout {
+    gap: 8px;
+  }
+
+  .plasmid-kpi-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .plasmid-nav-subtitle {
+    display: none;
+  }
+
+  .plasmid-nav-toolbar {
+    padding: 10px 12px !important;
+    gap: 6px !important;
+  }
+}
+
+/* GenomeNavigator Indexed Hotspot Chips: Wrap on Desktop, Single-Row Scroll on Mobile */
+.plasmid-hotspot-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+@media (max-width: 767px) {
+  .plasmid-hotspot-strip {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+
+  .plasmid-hotspot-strip::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Liftover Grid */
 .plasmid-liftover-grid {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 16px;
   align-items: center;
 }
 
@@ -30,7 +328,7 @@ body {
 
 @media (max-width: 640px) {
   .plasmid-liftover-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
 }
