@@ -1,9 +1,14 @@
 use crate::chrom::{chrom_to_id, id_to_chrom};
 use crate::error::{PlasmidCoreError, Result};
+use plasmid_format::{decompress_gzip_bounded, is_gzip_magic};
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::HashMap;
 
-/// Structured representation of a genomic variant decoded from a VCF slice.
+/// Maximum uncompressed VCF size (512 MiB) when decoding `.vcf.gz` streams in memory.
+pub const MAX_VCF_DECOMPRESSED_BYTES: u64 = 512 * 1024 * 1024;
+
+/// Structured representation of a genomic variant decoded from a VCF or 23andMe slice.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VcfVariantRecord {
     pub chrom: String,
@@ -20,35 +25,68 @@ pub struct VcfVariantRecord {
 }
 
 impl VcfVariantRecord {
-    /// Returns true if this variant is flagged as Pathogenic or Likely Pathogenic.
+    /// Returns true if this variant is flagged as Pathogenic, Likely Pathogenic, Oncogenic, or Likely Oncogenic.
     pub fn is_pathogenic(&self) -> bool {
         if let Some(sig) = &self.clinvar_significance {
             let s = sig.to_lowercase();
-            s.contains("pathogenic") && !s.contains("conflict") && !s.contains("benign")
+            (s.contains("pathogenic") || s.contains("oncogenic"))
+                && !s.contains("conflict")
+                && !s.contains("benign")
         } else {
             false
         }
     }
 }
 
+fn parse_geneinfo_primary_symbol(raw_geneinfo: &str) -> Option<String> {
+    let mut fallback: Option<String> = None;
+    for pair in raw_geneinfo.split('|') {
+        let sym = pair.split(':').next().unwrap_or("").trim();
+        if sym.is_empty() {
+            continue;
+        }
+        if fallback.is_none() {
+            fallback = Some(sym.to_string());
+        }
+        if !sym.starts_with("LOC") {
+            return Some(sym.to_string());
+        }
+    }
+    fallback
+}
+
+fn is_uninformative_or_uncertain_clnsig(sig: &str) -> bool {
+    let lower = sig.trim().to_ascii_lowercase();
+    lower.is_empty()
+        || lower == "."
+        || lower == "not_provided"
+        || lower == "no_classification_for_the_single_variant"
+        || lower == "uncertain_significance"
+        || lower.starts_with("conflicting_")
+}
+
 pub struct VcfDecoder;
 
 impl VcfDecoder {
-    /// Decodes variant records from a raw UTF-8 or BGZF-decompressed VCF byte slice.
+    /// Decodes variant records from a raw UTF-8, zero-padded chunk, or Gzip/BGZF (`.vcf.gz`) byte slice.
     pub fn decode_slice(data: &[u8]) -> Result<Vec<VcfVariantRecord>> {
         let trimmed_data = match data.iter().rposition(|&b| b != 0) {
             Some(last) => &data[..=last],
             None => &[],
         };
 
-        let text = match std::str::from_utf8(trimmed_data) {
-            Ok(s) => s,
-            Err(_) => {
-                return Err(PlasmidCoreError::VcfParse(
-                    "Invalid UTF-8 in VCF byte slice".to_string(),
-                ));
-            }
+        let raw_cow: Cow<'_, [u8]> = if is_gzip_magic(trimmed_data) {
+            let decompressed = decompress_gzip_bounded(data, MAX_VCF_DECOMPRESSED_BYTES)
+                .or_else(|_| decompress_gzip_bounded(trimmed_data, MAX_VCF_DECOMPRESSED_BYTES))
+                .map_err(|e| PlasmidCoreError::VcfParse(format!("Invalid .vcf.gz stream: {e}")))?;
+            Cow::Owned(decompressed)
+        } else {
+            Cow::Borrowed(trimmed_data)
         };
+
+        let text = std::str::from_utf8(&raw_cow).map_err(|_| {
+            PlasmidCoreError::VcfParse("Invalid UTF-8 in VCF byte slice".to_string())
+        })?;
 
         let mut records = Vec::new();
 
@@ -121,16 +159,13 @@ impl VcfDecoder {
                 _ => continue,
             };
 
-            let id = if cols[2] != "." && !cols[2].is_empty() {
-                Some(cols[2].to_string())
-            } else {
-                None
-            };
+            let raw_id_col = cols[2].trim();
 
             let raw_ref = cols[3].trim();
             let raw_alt = cols[4].trim();
             if raw_ref.is_empty()
                 || raw_alt.is_empty()
+                || raw_alt == "."
                 || !raw_ref.bytes().all(|b| {
                     matches!(
                         b.to_ascii_uppercase(),
@@ -168,7 +203,7 @@ impl VcfDecoder {
                 None
             };
 
-            let filter = if cols.len() > 6 {
+            let filter = if cols.len() > 6 && cols[6] != "." {
                 cols[6].to_string()
             } else {
                 "PASS".to_string()
@@ -176,8 +211,11 @@ impl VcfDecoder {
 
             let mut info = HashMap::new();
             let mut gene = None;
-            let mut clinvar_significance = None;
+            let mut geneinfo_symbol = None;
+            let mut clinvar_significance: Option<String> = None;
+            let mut onc_significance: Option<String> = None;
             let mut amino_acid_change = None;
+            let mut rs_from_info: Option<String> = None;
 
             if cols.len() > 7 && cols[7] != "." {
                 for item in cols[7].split(';') {
@@ -192,8 +230,31 @@ impl VcfDecoder {
 
                         match k.as_str() {
                             "GENE" => gene = Some(v.clone()),
+                            "GENEINFO" => {
+                                geneinfo_symbol = parse_geneinfo_primary_symbol(&v);
+                            }
                             "CLNSIG" | "CLINVAR" => clinvar_significance = Some(v.clone()),
+                            "ONC" | "SCI" => {
+                                if onc_significance.is_none() {
+                                    onc_significance = Some(v.clone());
+                                }
+                            }
                             "AA" | "HGVSP" => amino_acid_change = Some(v.clone()),
+                            "CLNHGVS" => {
+                                if amino_acid_change.is_none() {
+                                    amino_acid_change = Some(v.clone());
+                                }
+                            }
+                            "RS" => {
+                                let first_rs = v.split('|').next().unwrap_or("").trim();
+                                if !first_rs.is_empty()
+                                    && first_rs.bytes().all(|b| b.is_ascii_digit())
+                                {
+                                    rs_from_info = Some(format!("rs{first_rs}"));
+                                } else if first_rs.starts_with("rs") {
+                                    rs_from_info = Some(first_rs.to_string());
+                                }
+                            }
                             _ => {}
                         }
 
@@ -203,6 +264,40 @@ impl VcfDecoder {
                     }
                 }
             }
+
+            if gene.is_none()
+                && let Some(sym) = geneinfo_symbol
+            {
+                info.entry("GENE".to_string())
+                    .or_insert_with(|| sym.clone());
+                gene = Some(sym);
+            }
+
+            if clinvar_significance
+                .as_deref()
+                .is_none_or(is_uninformative_or_uncertain_clnsig)
+                && let Some(onc) = onc_significance
+                && !onc.to_ascii_lowercase().contains("uncertain")
+                && !onc.to_ascii_lowercase().contains("benign")
+            {
+                clinvar_significance = Some(onc);
+            }
+
+            let id = if raw_id_col.is_empty() || raw_id_col == "." {
+                rs_from_info
+            } else if raw_id_col.bytes().all(|b| b.is_ascii_digit()) {
+                info.entry("VARIATION_ID".to_string())
+                    .or_insert_with(|| raw_id_col.to_string());
+                if let Some(rsid) = rs_from_info {
+                    Some(rsid)
+                } else if let Ok(vcv_num) = raw_id_col.parse::<u64>() {
+                    Some(format!("VCV{vcv_num:09}"))
+                } else {
+                    Some(raw_id_col.to_string())
+                }
+            } else {
+                Some(raw_id_col.to_string())
+            };
 
             if cols.len() >= 10 && cols[8] != "." && cols[9] != "." {
                 for (fmt_key, sample_val) in cols[8].split(':').zip(cols[9].split(':')) {
@@ -236,6 +331,7 @@ impl VcfDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use plasmid_format::{CompressionCodec, compress_payload};
 
     #[test]
     fn test_vcf_decoder_braf() {
@@ -253,6 +349,38 @@ mod tests {
         assert_eq!(r.clinvar_significance.as_deref(), Some("Pathogenic"));
         assert_eq!(r.amino_acid_change.as_deref(), Some("p.Val600Glu"));
         assert!(r.is_pathogenic());
+    }
+
+    #[test]
+    fn test_vcf_decoder_ncbi_clinvar_schema_and_vcf_gz() {
+        let clinvar_vcf = concat!(
+            "##fileformat=VCFv4.1\n",
+            "##source=ClinVar\n",
+            "##reference=GRCh38\n",
+            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n",
+            "19\t44908822\t17848\tC\tT\t.\t.\tALLELEID=32885;CLNDN=Hyperlipoproteinemia_type_III;CLNHGVS=NC_000019.10:g.44908822C>T;CLNREVSTAT=reviewed_by_expert_panel;CLNSIG=drug_response;GENEINFO=APOE:348;MC=SO:0001583|missense_variant;RS=7412\n",
+            "11\t5227002\t15333\tT\tA\t.\t.\tALLELEID=30381;CLNDN=Sickle_cell_disease;CLNREVSTAT=criteria_provided,_multiple_submitters,_no_conflicts;CLNSIG=Pathogenic;GENEINFO=HBB:3043|LOC106099062:106099062;RS=334\n"
+        );
+        let gz_bytes = compress_payload(CompressionCodec::Bgzf, clinvar_vcf.as_bytes()).unwrap();
+        let records = VcfDecoder::decode_slice(&gz_bytes).unwrap();
+        assert_eq!(records.len(), 2);
+
+        assert_eq!(records[0].chrom, "chr19");
+        assert_eq!(records[0].id.as_deref(), Some("rs7412"));
+        assert_eq!(
+            records[0].info.get("VARIATION_ID").map(String::as_str),
+            Some("17848")
+        );
+        assert_eq!(records[0].gene.as_deref(), Some("APOE"));
+        assert_eq!(
+            records[0].clinvar_significance.as_deref(),
+            Some("drug_response")
+        );
+
+        assert_eq!(records[1].chrom, "chr11");
+        assert_eq!(records[1].id.as_deref(), Some("rs334"));
+        assert_eq!(records[1].gene.as_deref(), Some("HBB"));
+        assert!(records[1].is_pathogenic());
     }
 
     #[test]
@@ -310,7 +438,6 @@ mod tests {
             Some("GA")
         );
 
-        // Non-ASCII 5-column TSV must NOT be accepted as valid VCF REF/ALT bases
         let bogus_5col = "chr7\t140753336\trs1\t유전자\t변이\t99\tPASS\tGENE=BRAF\n";
         let bogus_records = VcfDecoder::decode_slice(bogus_5col.as_bytes()).unwrap();
         assert!(bogus_records.is_empty());

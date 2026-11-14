@@ -1,3 +1,4 @@
+use crate::codec::{CODEC_MASK, CompressionCodec, compress_payload};
 use crate::error::Result;
 use crate::header::{DEFAULT_CHUNK_SIZE, FLAG_HIERARCHICAL_INDEX, HEADER_SIZE, PlasmidHeader};
 use crate::index::{
@@ -10,6 +11,8 @@ use std::io::Write;
 pub struct PayloadItem {
     pub chrom_id: u16,
     pub entry_type: EntryType,
+    pub codec: CompressionCodec,
+    pub precompressed: bool,
     pub flags: u8,
     pub start_pos: u64,
     pub end_pos: u64,
@@ -19,6 +22,7 @@ pub struct PayloadItem {
 pub struct PlasmidBuilder {
     reference_build: String,
     metadata_json: String,
+    default_codec: CompressionCodec,
     items: Vec<PayloadItem>,
 }
 
@@ -27,8 +31,18 @@ impl PlasmidBuilder {
         Self {
             reference_build: reference_build.to_string(),
             metadata_json: "{}".to_string(),
+            default_codec: CompressionCodec::Raw,
             items: Vec::new(),
         }
+    }
+
+    pub fn set_compression(&mut self, codec: CompressionCodec) -> &mut Self {
+        self.default_codec = codec;
+        self
+    }
+
+    pub fn compression(&self) -> CompressionCodec {
+        self.default_codec
     }
 
     pub fn set_metadata(&mut self, metadata_json: &str) -> &mut Self {
@@ -44,10 +58,31 @@ impl PlasmidBuilder {
         end_pos: u64,
         data: Vec<u8>,
     ) -> &mut Self {
+        self.add_item_with_codec(
+            chrom_id,
+            entry_type,
+            self.default_codec,
+            start_pos,
+            end_pos,
+            data,
+        )
+    }
+
+    pub fn add_item_with_codec(
+        &mut self,
+        chrom_id: u16,
+        entry_type: EntryType,
+        codec: CompressionCodec,
+        start_pos: u64,
+        end_pos: u64,
+        data: Vec<u8>,
+    ) -> &mut Self {
         self.items.push(PayloadItem {
             chrom_id,
             entry_type,
-            flags: 0,
+            codec,
+            precompressed: false,
+            flags: codec as u8,
             start_pos,
             end_pos,
             data,
@@ -55,19 +90,45 @@ impl PlasmidBuilder {
         self
     }
 
-    /// Builds the .plasmid file into any std::io::Write destination.
-    pub fn build<W: Write>(&mut self, mut writer: W) -> Result<PlasmidHeader> {
-        // 1. Pack items into contiguous 16KB chunks
+    /// Adds an already codec-encoded payload frame directly without re-encoding.
+    pub fn add_precompressed_item(
+        &mut self,
+        chrom_id: u16,
+        entry_type: EntryType,
+        codec: CompressionCodec,
+        start_pos: u64,
+        end_pos: u64,
+        compressed_data: Vec<u8>,
+    ) -> &mut Self {
+        self.items.push(PayloadItem {
+            chrom_id,
+            entry_type,
+            codec,
+            precompressed: true,
+            flags: codec as u8,
+            start_pos,
+            end_pos,
+            data: compressed_data,
+        });
+        self
+    }
+
+    fn pack_payload_chunks(&self) -> Result<(Vec<u8>, Vec<PlasmidIndexEntry>)> {
         let mut all_payload_bytes = Vec::new();
-        let mut index_entries = Vec::new();
+        let mut index_entries = Vec::with_capacity(self.items.len());
 
         for item in &self.items {
-            let chunk_start = (all_payload_bytes.len() / DEFAULT_CHUNK_SIZE as usize) as u32;
-            let byte_len = item.data.len();
-            all_payload_bytes.extend_from_slice(&item.data);
+            let stored = if item.precompressed || item.codec == CompressionCodec::Raw {
+                item.data.clone()
+            } else {
+                compress_payload(item.codec, &item.data)?
+            };
 
-            // Pad each entry to 16KB boundary to guarantee chunk independence if needed,
-            // or allow packed streaming. Here we align to 16KB boundary for clean BEP 52 P2P slicing.
+            let chunk_start = (all_payload_bytes.len() / DEFAULT_CHUNK_SIZE as usize) as u32;
+            let byte_len = stored.len();
+            all_payload_bytes.extend_from_slice(&stored);
+
+            // Pad each entry to 16KB boundary to guarantee chunk independence for BEP 52 P2P slicing
             let remainder = all_payload_bytes.len() % DEFAULT_CHUNK_SIZE as usize;
             let padding = if remainder == 0 {
                 0
@@ -78,11 +139,12 @@ impl PlasmidBuilder {
 
             let chunk_end = (all_payload_bytes.len() / DEFAULT_CHUNK_SIZE as usize) as u32;
             let chunk_count = chunk_end - chunk_start;
+            let flags = (item.flags & !CODEC_MASK) | (item.codec as u8);
 
             index_entries.push(PlasmidIndexEntry {
                 chrom_id: item.chrom_id,
                 entry_type: item.entry_type,
-                flags: item.flags,
+                flags,
                 start_pos: item.start_pos,
                 end_pos: item.end_pos,
                 chunk_start,
@@ -90,6 +152,13 @@ impl PlasmidBuilder {
                 payload_bytes: byte_len as u32,
             });
         }
+
+        Ok((all_payload_bytes, index_entries))
+    }
+
+    /// Builds the .plasmid file into any std::io::Write destination.
+    pub fn build<W: Write>(&mut self, mut writer: W) -> Result<PlasmidHeader> {
+        let (all_payload_bytes, index_entries) = self.pack_payload_chunks()?;
 
         let dir = PlasmidDirectory::new(index_entries);
         let serialized_index = dir.serialize();
@@ -148,37 +217,8 @@ impl PlasmidBuilder {
     ) -> Result<PlasmidHeader> {
         let entries_per_leaf = entries_per_leaf.max(1);
 
-        // 1. Pack items into contiguous 16KB chunks
-        let mut all_payload_bytes = Vec::new();
-        let mut index_entries = Vec::new();
-
-        for item in &self.items {
-            let chunk_start = (all_payload_bytes.len() / DEFAULT_CHUNK_SIZE as usize) as u32;
-            let byte_len = item.data.len();
-            all_payload_bytes.extend_from_slice(&item.data);
-
-            let remainder = all_payload_bytes.len() % DEFAULT_CHUNK_SIZE as usize;
-            let padding = if remainder == 0 {
-                0
-            } else {
-                DEFAULT_CHUNK_SIZE as usize - remainder
-            };
-            all_payload_bytes.resize(all_payload_bytes.len() + padding, 0);
-
-            let chunk_end = (all_payload_bytes.len() / DEFAULT_CHUNK_SIZE as usize) as u32;
-            let chunk_count = chunk_end - chunk_start;
-
-            index_entries.push(PlasmidIndexEntry {
-                chrom_id: item.chrom_id,
-                entry_type: item.entry_type,
-                flags: item.flags,
-                start_pos: item.start_pos,
-                end_pos: item.end_pos,
-                chunk_start,
-                chunk_count,
-                payload_bytes: byte_len as u32,
-            });
-        }
+        // 1. Pack items (with codec compression if configured) into contiguous 16KB chunks
+        let (all_payload_bytes, mut index_entries) = self.pack_payload_chunks()?;
 
         // Sort all index entries by (chrom_id, start_pos, entry_type)
         index_entries.sort_by_key(|e| (e.chrom_id, e.start_pos, e.entry_type as u8));

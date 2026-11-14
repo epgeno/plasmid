@@ -38,6 +38,7 @@ struct ContainerInspection {
     metadata_length: u64,
     metadata: serde_json::Value,
     entry_counts: BTreeMap<String, usize>,
+    codec_counts: BTreeMap<String, usize>,
     total_index_entries: usize,
 }
 
@@ -60,6 +61,7 @@ pub fn execute(args: InspectArgs) -> Result<(), Box<dyn std::error::Error>> {
     let all_entries = plasmid_reader.read_all_entries()?;
 
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut codec_counts: BTreeMap<String, usize> = BTreeMap::new();
     for e in &all_entries {
         let type_name = match e.entry_type {
             EntryType::VcfVariant => "VcfVariant",
@@ -69,6 +71,11 @@ pub fn execute(args: InspectArgs) -> Result<(), Box<dyn std::error::Error>> {
             EntryType::WikiMarkdown => "WikiMarkdown",
         };
         *counts.entry(type_name.to_string()).or_insert(0) += 1;
+        let codec_name = e
+            .codec()
+            .map(|c| c.as_str().to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
+        *codec_counts.entry(codec_name).or_insert(0) += 1;
     }
 
     if args.json {
@@ -88,6 +95,7 @@ pub fn execute(args: InspectArgs) -> Result<(), Box<dyn std::error::Error>> {
             metadata_length: header.metadata_length,
             metadata: meta_val,
             entry_counts: counts,
+            codec_counts,
             total_index_entries: all_entries.len(),
         };
         println!("{}", serde_json::to_string_pretty(&inspection)?);
@@ -136,6 +144,9 @@ pub fn execute(args: InspectArgs) -> Result<(), Box<dyn std::error::Error>> {
     );
     for (name, count) in &counts {
         println!("  • {:<20}: {} entries", name, count);
+    }
+    for (codec_name, count) in &codec_counts {
+        println!("  • codec:{:<14}: {} entries", codec_name, count);
     }
 
     if args.entries && !all_entries.is_empty() {

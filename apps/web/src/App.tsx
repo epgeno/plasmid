@@ -16,9 +16,11 @@ import {
   Upload,
   HardDrive,
   Trash2,
+  Stethoscope,
 } from 'lucide-react'
 import { SupportedLanguage, TRANSLATIONS } from './i18n'
 import { GenomeNavigator } from './components/GenomeNavigator'
+import { ClinVarIntersectionPanel } from './components/ClinVarIntersectionPanel'
 import {
   plasmidContainerClient,
   DEFAULT_OPFS_FILENAME,
@@ -35,21 +37,92 @@ import {
 } from './services/opfs'
 import type {
   CatalogVariantItem,
+  ClinVarIntersectionReport,
   DataSourceMode,
   LiftoverResult,
   WasmMerkleVerification,
 } from './types/plasmid'
 
-function pickDifferentBase(base: string): string {
-  const first = (base[0] || 'A').toUpperCase()
-  return first === 'A' ? 'C' : 'A'
+function formatVaultErrorMessage(raw: string, lang: SupportedLanguage): string {
+  const cleaned = raw
+    .replace(/^Local \.plasmid parse error:\s*/i, '')
+    .replace(/^VCF dataset parse error:\s*/i, '')
+    .replace(/^VCF parsing error:\s*/i, '')
+    .replace(/^Serialization error:\s*/i, '')
+    .trim()
+
+  if (lang === 'en') {
+    return cleaned
+  }
+
+  const extMatch = /^Unsupported file extension for "([^"]+)"/i.exec(cleaned)
+  if (extMatch) {
+    const name = extMatch[1]
+    if (lang === 'ko') {
+      return `지원하지 않는 파일 형식("${name}")입니다. 지원 형식: .vcf, .vcf.gz, .plasmid, .txt, .txt.gz`
+    }
+    if (lang === 'zh') {
+      return `不支持的文件格式（"${name}"）。支持格式：.vcf, .vcf.gz, .plasmid, .txt, .txt.gz`
+    }
+    return `未対応のファイル形式（"${name}"）です。対応形式: .vcf, .vcf.gz, .plasmid, .txt, .txt.gz`
+  }
+
+  if (/Selected genomic file is empty|buffer is empty|Decompressed \.vcf\.gz stream is empty|only null bytes/i.test(cleaned)) {
+    if (lang === 'ko') return '선택한 유전체 파일이 비어 있습니다.'
+    if (lang === 'zh') return '所选基因组文件为空。'
+    return '選択されたゲノムファイルが空です。'
+  }
+
+  if (/Invalid \.vcf\.gz stream/i.test(cleaned)) {
+    if (lang === 'ko') return '손상되었거나 유효하지 않은 .vcf.gz 압축 스트림입니다.'
+    if (lang === 'zh') return '.vcf.gz 压缩数据流损坏或无效。'
+    return '破損または無効な .vcf.gz 圧縮ストリームです。'
+  }
+
+  if (/Invalid UTF-8/i.test(cleaned)) {
+    if (lang === 'ko') return '유전체 텍스트 파일의 UTF-8 인코딩이 올바르지 않습니다.'
+    if (lang === 'zh') return '基因组文本文件的 UTF-8 编码无效。'
+    return 'ゲノムテキストファイルの UTF-8 エンコーディングが無効です。'
+  }
+
+  if (/Merkle root integrity check failed/i.test(cleaned)) {
+    if (lang === 'ko') return '.plasmid 컨테이너의 SHA-256 머클 루트 무결성 검증에 실패했습니다.'
+    if (lang === 'zh') return '.plasmid 容器的 SHA-256 默克尔根完整性校验失败。'
+    return '.plasmid コンテナの SHA-256 マークルルート整合性検証に失敗しました。'
+  }
+
+  if (/shorter than 128-byte \.plasmid header|magic|Invalid \.plasmid/i.test(cleaned)) {
+    if (lang === 'ko') return '유효한 .plasmid 바이너리 컨테이너 헤더가 아닙니다.'
+    if (lang === 'zh') return '不是有效的 .plasmid 二进制容器文件头。'
+    return '有効な .plasmid バイナリコンテナヘッダーではありません。'
+  }
+
+  if (
+    /Input contains no valid VCF header or variant records|Expected at least 8 tab-delimited columns|No valid variant records found|Invalid coordinate/i.test(
+      cleaned
+    )
+  ) {
+    if (lang === 'ko') return '유효한 VCF 헤더 또는 유전체 변이 레코드를 찾을 수 없습니다.'
+    if (lang === 'zh') return '未找到有效的 VCF 表头或基因组变异记录。'
+    return '有効な VCF ヘッダーまたはゲノム変異レコードが見つかりません。'
+  }
+
+  if (lang === 'ko') return '유전체 파일 형식을 해석할 수 없습니다.'
+  if (lang === 'zh') return '无法解析该基因组文件格式。'
+  return 'ゲノムファイル形式を解析できませんでした。'
 }
 
 export default function App() {
   const initialVaultPath = opfs.getActiveVaultPath()
   const [lang, setLang] = useState<SupportedLanguage>('ko')
   const [activeTab, setActiveTab] = useState<
-    'navigator' | 'stream' | 'liftover' | 'wiki' | 'swarm' | 'governance'
+    | 'navigator'
+    | 'intersection'
+    | 'stream'
+    | 'liftover'
+    | 'wiki'
+    | 'swarm'
+    | 'governance'
   >('navigator')
 
   const [sourceMode, setSourceMode] = useState<DataSourceMode>(
@@ -82,6 +155,16 @@ export default function App() {
   const [liftoverError, setLiftoverError] = useState<string | null>(null)
   const [guardError, setGuardError] = useState<string | null>(null)
 
+  const [intersectionReport, setIntersectionReport] =
+    useState<ClinVarIntersectionReport | null>(null)
+  const [intersectionLoading, setIntersectionLoading] = useState<boolean>(false)
+  const [intersectionError, setIntersectionError] = useState<string | null>(null)
+  const [navigatorJumpTarget, setNavigatorJumpTarget] = useState<{
+    chrom: string
+    pos: number
+    seq: number
+  } | null>(null)
+
   const t = TRANSLATIONS[lang]
 
   const refreshVaultMetadata = useCallback(async () => {
@@ -113,6 +196,7 @@ export default function App() {
           })
 
         if (reqSeq !== sourceReqSeqRef.current) return
+        setNavigatorJumpTarget(null)
         setSourceMode(nextMode)
         setActiveOpfsFilename(targetFile)
         opfs.setActiveVaultPath(nextMode === 'vault' ? targetFile : null)
@@ -236,6 +320,7 @@ export default function App() {
       if (reqSeq !== sourceReqSeqRef.current) return
 
       opfs.setActiveVaultPath(savedEntry.opfsPath)
+      setNavigatorJumpTarget(null)
       setSourceMode('vault')
       setActiveOpfsFilename(savedEntry.opfsPath)
       setSession(loadedSession)
@@ -317,22 +402,20 @@ export default function App() {
       }
 
       const refAllele = current.variant.ref
-      const altNeighbor = pickDifferentBase(refAllele).repeat(refAllele.length)
-      const refWindow = `${refAllele}${altNeighbor}`
       const testPos = simulateAdversarialDrift
         ? current.variant.pos + 1
         : current.variant.pos
 
       try {
-        await decoderClient.verifyRefFingerprint(
-          current.variant.id,
-          current.variant.chrom,
-          testPos,
-          refAllele,
-          refWindow,
-          current.variant.pos,
-          containerAsm
-        )
+        await decoderClient.verifyLocusConsistency({
+          rsid: current.variant.id,
+          chrom: current.variant.chrom,
+          queriedPos: testPos,
+          assertedRef: refAllele,
+          authoritativePos: current.variant.pos,
+          authoritativeRef: refAllele,
+          targetBuild: containerAsm,
+        })
         if (!cancelled) setGuardError(null)
       } catch (err: unknown) {
         if (!cancelled) {
@@ -346,6 +429,42 @@ export default function App() {
       cancelled = true
     }
   }, [current, session?.containerAssembly, simulateAdversarialDrift])
+
+  // Automatically intersect active OPFS Vault genome against public ClinVar Zstd pack in WASM
+  useEffect(() => {
+    if (sourceMode !== 'vault' || !activeOpfsFilename) {
+      setIntersectionReport(null)
+      setIntersectionLoading(false)
+      setIntersectionError(null)
+      return
+    }
+
+    const abortController = new AbortController()
+    setIntersectionLoading(true)
+    setIntersectionError(null)
+
+    plasmidContainerClient
+      .intersectVaultWithPublicClinvar({
+        vaultOpfsFilename: activeOpfsFilename,
+        signal: abortController.signal,
+      })
+      .then((report) => {
+        if (!abortController.signal.aborted) {
+          setIntersectionReport(report)
+          setIntersectionLoading(false)
+        }
+      })
+      .catch((err: unknown) => {
+        if (!abortController.signal.aborted) {
+          setIntersectionError(err instanceof Error ? err.message : String(err))
+          setIntersectionLoading(false)
+        }
+      })
+
+    return () => {
+      abortController.abort()
+    }
+  }, [sourceMode, activeOpfsFilename])
 
   const handleVerifyMerkle = async () => {
     setVerifying(true)
@@ -530,6 +649,7 @@ export default function App() {
               {(
                 [
                   { id: 'navigator', icon: Compass, label: t.header.tabs.navigator },
+                  { id: 'intersection', icon: Stethoscope, label: t.header.tabs.intersection },
                   { id: 'stream', icon: Layers, label: t.header.tabs.viewer },
                   { id: 'liftover', icon: ArrowRightLeft, label: t.header.tabs.liftover },
                   { id: 'wiki', icon: FileText, label: t.header.tabs.wiki },
@@ -707,7 +827,7 @@ export default function App() {
               ref={fileInputRef}
               data-testid="vault-file-input"
               type="file"
-              accept=".vcf,.plasmid,.txt"
+              accept=".vcf,.vcf.gz,.vcf.bgz,.plasmid,.txt,.txt.gz,.tsv,.tsv.gz"
               onChange={(e) => {
                 const chosen = e.target.files?.[0]
                 if (chosen) {
@@ -787,7 +907,8 @@ export default function App() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                 <AlertTriangle size={15} color="#dc2626" style={{ flexShrink: 0 }} />
                 <span style={{ wordBreak: 'break-word' }}>
-                  <strong>{t.vault.uploadErrorPrefix}</strong> {vaultError}
+                  <strong>{t.vault.uploadErrorPrefix}</strong>{' '}
+                  {formatVaultErrorMessage(vaultError, lang)}
                 </span>
               </div>
               <button
@@ -949,6 +1070,72 @@ export default function App() {
               )
             })}
           </div>
+
+          {/* Live ClinVar Intersection Summary Strip inside Vault Card */}
+          {sourceMode === 'vault' && (intersectionLoading || intersectionReport) && (
+            <div
+              data-testid="vault-clinvar-summary"
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '10px',
+                marginTop: '12px',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                border: '1px solid #86efac',
+                minWidth: 0,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: '#14532d',
+                  minWidth: 0,
+                  flex: '1 1 240px',
+                }}
+              >
+                <Stethoscope size={15} color="#15803d" style={{ flexShrink: 0 }} />
+                <span style={{ wordBreak: 'break-word' }}>
+                  {intersectionLoading
+                    ? t.vault.intersectRunning
+                    : intersectionReport
+                      ? t.vault.intersectReadyBanner(
+                          intersectionReport.matched_count,
+                          intersectionReport.clinvar_variants_scanned
+                        )
+                      : ''}
+                </span>
+              </div>
+
+              {intersectionReport && activeTab !== 'intersection' && (
+                <button
+                  type="button"
+                  data-testid="open-clinvar-report-btn"
+                  onClick={() => setActiveTab('intersection')}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid #16a34a',
+                    backgroundColor: '#16a34a',
+                    color: '#ffffff',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {t.vault.openReportBtn}
+                </button>
+              )}
+            </div>
+          )}
         </section>
 
         {/* Active Container Variant Bar */}
@@ -1044,7 +1231,10 @@ export default function App() {
             {catalogItems.length > 0 && (
               <select
                 value={current?.key ?? ''}
-                onChange={(e) => setSelectedKey(e.target.value)}
+                onChange={(e) => {
+                  setNavigatorJumpTarget(null)
+                  setSelectedKey(e.target.value)
+                }}
                 style={{
                   maxWidth: '100%',
                   padding: '8px 10px',
@@ -1080,9 +1270,46 @@ export default function App() {
               containerAssembly={session?.containerAssembly ?? 'GRCh38'}
               catalogItems={catalogItems}
               selectedCatalogKey={selectedKey}
-              onSelectCatalogKey={setSelectedKey}
+              onSelectCatalogKey={(key) => {
+                setNavigatorJumpTarget(null)
+                setSelectedKey(key)
+              }}
+              externalJumpTarget={navigatorJumpTarget}
+              onExternalJumpConsumed={(seq) => {
+                setNavigatorJumpTarget((prev) => (prev?.seq === seq ? null : prev))
+              }}
             />
           </div>
+        )}
+
+        {/* TAB 0B: Personal DNA <-> Public ClinVar Zstd Intersection Report */}
+        {activeTab === 'intersection' && (
+          <ClinVarIntersectionPanel
+            lang={lang}
+            hasVaultFile={sourceMode === 'vault'}
+            loading={intersectionLoading}
+            error={intersectionError}
+            report={intersectionReport}
+            onTriggerUpload={() => fileInputRef.current?.click()}
+            onInspectInNavigator={(match) => {
+              const matchedItem = catalogItems.find(
+                (item) =>
+                  item.variant.chrom === match.chrom &&
+                  (item.variant.pos === match.personal_pos ||
+                    item.variant.pos === match.pos ||
+                    (Boolean(match.rsid) && item.variant.id === match.rsid))
+              )
+              if (matchedItem) {
+                setSelectedKey(matchedItem.key)
+              }
+              setActiveTab('navigator')
+              setNavigatorJumpTarget((prev) => ({
+                chrom: match.chrom,
+                pos: match.pos,
+                seq: (prev?.seq ?? 0) + 1,
+              }))
+            }}
+          />
         )}
 
         {/* TAB 1: Data Viewer (Real .plasmid Byte-Range & Merkle Verification) */}

@@ -4,6 +4,7 @@ import type {
   AnnotationRecord,
   ByteRange,
   CatalogVariantItem,
+  ClinVarIntersectionReport,
   ContainerMetadata,
   DataSourceMode,
   GenomeAssembly,
@@ -12,6 +13,7 @@ import type {
   PlasmidIndexEntry,
   PyramidIndex,
   SlicingPlan,
+  VcfVariantRecord,
   WasmChunkHashInfo,
   WasmHeaderInfo,
   WasmIndexEntryInfo,
@@ -45,6 +47,7 @@ export interface ContainerSession {
   metadata: ContainerMetadata;
   pyramid: PyramidIndex;
   vcfDataset?: ParsedVcfDataset;
+  localPlasmidVariants?: VcfVariantRecord[];
   leafCache: Map<string, Uint8Array>;
   chunkCache: Map<number, Uint8Array>;
 }
@@ -382,6 +385,7 @@ class PlasmidContainerClient {
           flatEntries: parsedLocal.entries,
           metadata,
           pyramid: parsedLocal.pyramid,
+          localPlasmidVariants: parsedLocal.raw_variants,
           leafCache: new Map(),
           chunkCache: new Map(),
         };
@@ -1011,7 +1015,31 @@ class PlasmidContainerClient {
     }[] = [];
 
     if (session.header.is_hierarchical && session.flatEntries.length === 0) {
-      for (const leaf of session.rootLeaves) {
+      const priorityOrder = [
+        'chr7',
+        'chr17',
+        'chr13',
+        'chr19',
+        'chr11',
+        'chr6',
+        'chr12',
+        'chr1',
+      ];
+      const leavesToSample =
+        session.rootLeaves.length <= 8
+          ? session.rootLeaves
+          : [...session.rootLeaves]
+              .sort((a, b) => {
+                const ia = priorityOrder.indexOf(a.chrom_name);
+                const ib = priorityOrder.indexOf(b.chrom_name);
+                if (ia !== -1 && ib !== -1) return ia - ib;
+                if (ia !== -1) return -1;
+                if (ib !== -1) return 1;
+                return a.chrom_id - b.chrom_id;
+              })
+              .slice(0, 8);
+
+      for (const leaf of leavesToSample) {
         const cacheKey = `${leaf.leaf_offset}:${leaf.leaf_length}`;
         let leafBuf = session.leafCache.get(cacheKey);
         if (!leafBuf) {
@@ -1029,7 +1057,15 @@ class PlasmidContainerClient {
           session.leafCache.set(cacheKey, leafBuf);
         }
         const parsed = await decoderClient.parseDirectoryEntries(leafBuf);
-        for (const entryInfo of parsed) {
+        const vcfOnly = parsed.filter((e) => e.entry.entry_type === 'VcfVariant');
+        // Sample middle entry on large chromosomes (where major clinical genes sit) or all entries on small containers
+        const chosenEntries =
+          session.rootLeaves.length <= 8
+            ? parsed
+            : vcfOnly.length > 0
+              ? [vcfOnly[Math.floor(vcfOnly.length / 2)]]
+              : [];
+        for (const entryInfo of chosenEntries) {
           allEntryRecords.push({ info: entryInfo, leaf });
         }
       }
@@ -1085,11 +1121,27 @@ class PlasmidContainerClient {
           ? 0
           : (windowRes.slicingPlan?.total_download_bytes ?? 0);
 
-      for (const variant of windowRes.variants) {
+      const perBlockLimit =
+        session.rootLeaves.length > 8 && session.sourceMode === 'public'
+          ? 24
+          : MAX_CATALOG_SELECTOR_ITEMS;
+      const prioritizedVariants =
+        perBlockLimit < MAX_CATALOG_SELECTOR_ITEMS
+          ? [...windowRes.variants].sort((a, b) => {
+              const aRs = a.id.startsWith('rs') ? 1 : 0;
+              const bRs = b.id.startsWith('rs') ? 1 : 0;
+              return b.score - a.score || bRs - aRs || a.pos - b.pos;
+            })
+          : windowRes.variants;
+
+      let addedThisBlock = 0;
+      for (const variant of prioritizedVariants) {
         if (items.length >= MAX_CATALOG_SELECTOR_ITEMS) break;
+        if (addedThisBlock >= perBlockLimit) break;
         const itemKey = `${variant.chrom}:${variant.pos}:${variant.ref}:${variant.alt}`;
         if (seenKeys.has(itemKey)) continue;
         seenKeys.add(itemKey);
+        addedThisBlock += 1;
 
         items.push({
           key: itemKey,
@@ -1106,6 +1158,218 @@ class PlasmidContainerClient {
     }
 
     return { session, items };
+  }
+
+  /**
+   * Intersects a private OPFS Vault file (.vcf / .vcf.gz / 23andMe .txt / .plasmid)
+   * against the public ClinVar .plasmid container via HTTP 206 coarse chunk slicing + local WASM.
+   * Zero bytes of personal genomic data are ever sent over the network (RFC-0002).
+   */
+  public async intersectVaultWithPublicClinvar(options: {
+    vaultOpfsFilename: string;
+    clinvarDatasetUrl?: string;
+    clinvarOpfsFilename?: string;
+    signal?: AbortSignal;
+    onLog?: AuditLogger;
+  }): Promise<ClinVarIntersectionReport> {
+    const started = performance.now();
+    const clinvarDatasetUrl = options.clinvarDatasetUrl ?? DEFAULT_DATASET_URL;
+    const clinvarOpfsFilename = options.clinvarOpfsFilename ?? DEFAULT_OPFS_FILENAME;
+
+    // 1. Read personal genome strictly from browser OPFS Vault (0 outbound network bytes)
+    const vaultSession = await this.getSession({
+      sourceMode: 'vault',
+      airgapped: true,
+      opfsFilename: options.vaultOpfsFilename,
+      signal: options.signal,
+      onLog: options.onLog,
+    });
+
+    const personalRawVariants: VcfVariantRecord[] =
+      vaultSession.vcfDataset?.raw_variants ?? vaultSession.localPlasmidVariants ?? [];
+    const personalBuild = vaultSession.header.reference_build || 'GRCh38';
+
+    // 2. Open public ClinVar .plasmid container header + root directory (or OPFS offline cache)
+    const clinvarAirgapped = await opfs.hasFile(clinvarOpfsFilename);
+    const clinvarSession = await this.getSession({
+      sourceMode: 'public',
+      airgapped: clinvarAirgapped,
+      datasetUrl: clinvarDatasetUrl,
+      opfsFilename: clinvarOpfsFilename,
+      signal: options.signal,
+      onLog: options.onLog,
+    });
+
+    if (personalRawVariants.length === 0) {
+      return {
+        vaultFilename: options.vaultOpfsFilename,
+        clinvarDatasetUrl,
+        clinvarTotalFileSize: clinvarSession.totalFileSize,
+        clinvarBytesFetched: 0,
+        clinvarChunksAccessed: [],
+        rangeHeadersIssued: [],
+        personalBytesSent: 0,
+        elapsedMs: Math.round((performance.now() - started) * 10) / 10,
+        personal_build: personalBuild,
+        clinvar_build: clinvarSession.containerAssembly,
+        total_personal_variants: 0,
+        carrier_personal_variants: 0,
+        lifted_variants_count: 0,
+        clinvar_variants_scanned: 0,
+        matched_count: 0,
+        pathogenic_count: 0,
+        likely_pathogenic_count: 0,
+        drug_response_count: 0,
+        risk_factor_count: 0,
+        matches: [],
+        chunk_hashes: [],
+      };
+    }
+
+    let clinvarBytesFetched = 0;
+    const rangeHeadersIssued: string[] = [];
+    let directoryBytes: Uint8Array;
+
+    if (clinvarSession.header.is_hierarchical) {
+      const leafPlan = await decoderClient.planIntersectionLeaves(
+        clinvarSession.indexBytes,
+        personalRawVariants,
+        personalBuild,
+        clinvarSession.containerAssembly
+      );
+
+      if (leafPlan.leaves.length === 0) {
+        return {
+          vaultFilename: options.vaultOpfsFilename,
+          clinvarDatasetUrl,
+          clinvarTotalFileSize: clinvarSession.totalFileSize,
+          clinvarBytesFetched: 0,
+          clinvarChunksAccessed: [],
+          rangeHeadersIssued: [],
+          personalBytesSent: 0,
+          elapsedMs: Math.round((performance.now() - started) * 10) / 10,
+          personal_build: personalBuild,
+          clinvar_build: clinvarSession.containerAssembly,
+          total_personal_variants: personalRawVariants.length,
+          carrier_personal_variants: 0,
+          lifted_variants_count: 0,
+          clinvar_variants_scanned: 0,
+          matched_count: 0,
+          pathogenic_count: 0,
+          likely_pathogenic_count: 0,
+          drug_response_count: 0,
+          risk_factor_count: 0,
+          matches: [],
+          chunk_hashes: [],
+        };
+      }
+
+      const leafBuffers: Uint8Array[] = [];
+      let totalLeafLen = 0;
+
+      for (const leaf of leafPlan.leaves) {
+        const cacheKey = `${leaf.leaf_offset}:${leaf.leaf_length}`;
+        let leafBuf = clinvarSession.leafCache.get(cacheKey);
+        if (!leafBuf) {
+          const leafRes = await this.readByteRange({
+            datasetUrl: clinvarSession.datasetUrl,
+            opfsFilename: clinvarSession.opfsFilename,
+            start: leaf.leaf_offset,
+            end: leaf.leaf_offset + leaf.leaf_length - 1,
+            airgapped: clinvarSession.airgapped,
+            signal: options.signal,
+            label: `Leaf Dir (${leaf.chrom_name})`,
+            onLog: options.onLog,
+          });
+          leafBuf = leafRes.bytes;
+          clinvarSession.leafCache.set(cacheKey, leafBuf);
+          clinvarBytesFetched += leafBuf.byteLength;
+          rangeHeadersIssued.push(leafRes.rangeHeader);
+        }
+        leafBuffers.push(leafBuf);
+        totalLeafLen += leafBuf.byteLength;
+      }
+
+      directoryBytes = new Uint8Array(totalLeafLen);
+      let off = 0;
+      for (const b of leafBuffers) {
+        directoryBytes.set(b, off);
+        off += b.byteLength;
+      }
+    } else {
+      directoryBytes = clinvarSession.indexBytes;
+    }
+
+    const slicingPlan = await decoderClient.planIntersectionChunks(
+      directoryBytes,
+      personalRawVariants,
+      personalBuild,
+      clinvarSession.containerAssembly,
+      clinvarSession.header.payload_offset,
+      clinvarSession.header.chunk_size
+    );
+
+    if (slicingPlan.chunk_indices.length === 0 || slicingPlan.entries.length === 0) {
+      return {
+        vaultFilename: options.vaultOpfsFilename,
+        clinvarDatasetUrl,
+        clinvarTotalFileSize: clinvarSession.totalFileSize,
+        clinvarBytesFetched,
+        clinvarChunksAccessed: [],
+        rangeHeadersIssued,
+        personalBytesSent: 0,
+        elapsedMs: Math.round((performance.now() - started) * 10) / 10,
+        personal_build: personalBuild,
+        clinvar_build: clinvarSession.containerAssembly,
+        total_personal_variants: personalRawVariants.length,
+        carrier_personal_variants: 0,
+        lifted_variants_count: 0,
+        clinvar_variants_scanned: 0,
+        matched_count: 0,
+        pathogenic_count: 0,
+        likely_pathogenic_count: 0,
+        drug_response_count: 0,
+        risk_factor_count: 0,
+        matches: [],
+        chunk_hashes: [],
+      };
+    }
+
+    const chunkFetch = await this.ensureChunksCached(
+      clinvarSession,
+      slicingPlan,
+      options.signal,
+      options.onLog
+    );
+    clinvarBytesFetched += chunkFetch.bytesFetched;
+    rangeHeadersIssued.push(...chunkFetch.rangeHeaders);
+
+    const wasmRes = await decoderClient.intersectPersonalWithClinvar(
+      personalRawVariants,
+      personalBuild,
+      slicingPlan.entries,
+      chunkFetch.chunksConcat,
+      slicingPlan.chunk_indices,
+      clinvarSession.header.chunk_size,
+      clinvarSession.containerAssembly
+    );
+
+    options.onLog?.(
+      `WASM ClinVar intersection matched ${wasmRes.matched_count} clinical variant(s) across ${slicingPlan.chunk_indices.length} Zstd chunk(s) (0 personal bytes sent)`,
+      'worker'
+    );
+
+    return {
+      vaultFilename: options.vaultOpfsFilename,
+      clinvarDatasetUrl,
+      clinvarTotalFileSize: clinvarSession.totalFileSize,
+      clinvarBytesFetched,
+      clinvarChunksAccessed: slicingPlan.chunk_indices,
+      rangeHeadersIssued,
+      personalBytesSent: 0,
+      elapsedMs: Math.round((performance.now() - started) * 10) / 10,
+      ...wasmRes,
+    };
   }
 
   /**

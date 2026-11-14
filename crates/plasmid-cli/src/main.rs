@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use plasmid_cli::commands::{
     build::{self, BuildArgs},
+    clinvar_pack::{self, ClinvarPackArgs},
     inspect::{self, InspectArgs},
     pack::{self, PackArgs},
     query::{self, QueryArgs},
@@ -13,7 +14,7 @@ use plasmid_cli::commands::{
     author = "The Plasmid Authors <team@epgeno.org>",
     version,
     about = "Decentralized Genomic Wiki & Streaming Engine Tooling",
-    long_about = "Official CLI suite for compiling, inspecting, verifying, and querying .plasmid single-file genomic archives with Merkle tree integrity and range slicing."
+    long_about = "Official CLI suite for compiling, inspecting, verifying, and querying .plasmid single-file genomic archives with Merkle tree integrity, Zstd compression, and range slicing."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -22,10 +23,13 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Compile VCF, FASTA, and ClinVar annotations into a .plasmid archive
+    /// Compile VCF (.vcf/.vcf.gz), FASTA, and ClinVar annotations into a .plasmid archive
     Build(BuildArgs),
 
-    /// Inspect 128B header, index layout, and metadata of a .plasmid archive
+    /// Stream an official NCBI ClinVar VCF (.vcf/.vcf.gz) into a multi-chromosome Zstd .plasmid pack
+    ClinvarPack(ClinvarPackArgs),
+
+    /// Inspect 128B header, index layout, codecs, and metadata of a .plasmid archive
     Inspect(InspectArgs),
 
     /// Cryptographically verify the SHA-256 Merkle tree and 16KB chunk integrity
@@ -43,6 +47,7 @@ fn main() {
 
     let result = match cli.command {
         Commands::Build(args) => build::execute(args),
+        Commands::ClinvarPack(args) => clinvar_pack::execute(args),
         Commands::Inspect(args) => inspect::execute(args),
         Commands::Verify(args) => verify::execute(args),
         Commands::Query(args) => query::execute(args),

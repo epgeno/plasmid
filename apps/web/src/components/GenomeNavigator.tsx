@@ -249,6 +249,8 @@ export interface GenomeNavigatorProps {
   catalogItems?: CatalogVariantItem[];
   selectedCatalogKey?: string | null;
   onSelectCatalogKey?: (key: string) => void;
+  externalJumpTarget?: { chrom: string; pos: number; seq: number } | null;
+  onExternalJumpConsumed?: (seq: number) => void;
 }
 
 interface IndexedHotspotChip {
@@ -269,6 +271,8 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
   catalogItems = [],
   selectedCatalogKey,
   onSelectCatalogKey,
+  externalJumpTarget = null,
+  onExternalJumpConsumed,
 }) => {
   const nt = TRANSLATIONS[lang].navigator;
   const isVaultSource = sourceMode === 'vault';
@@ -383,8 +387,14 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     };
   }, [assembly, addLog]);
 
+  const externalJumpRef = useRef(externalJumpTarget);
+  externalJumpRef.current = externalJumpTarget;
+  const onExternalJumpConsumedRef = useRef(onExternalJumpConsumed);
+  onExternalJumpConsumedRef.current = onExternalJumpConsumed;
+
   // Sync window when external catalog item is chosen in parent header
   useEffect(() => {
+    if (externalJumpRef.current) return;
     if (!selectedCatalogKey || catalogItems.length === 0) return;
     const found = catalogItems.find((item) => item.key === selectedCatalogKey);
     if (!found) return;
@@ -424,6 +434,41 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     };
   }, [selectedCatalogKey, catalogItems, containerAssembly, opfsFilename]);
 
+  // Jump directly to a GRCh38 ClinVar matched locus when requested from the Intersection Report
+  useEffect(() => {
+    if (!externalJumpTarget) return;
+    let cancelled = false;
+    const viewAsm = assemblyRef.current;
+    const targetSeq = externalJumpTarget.seq;
+
+    const jumpToTarget = async () => {
+      let targetPos = externalJumpTarget.pos;
+      if (viewAsm === 'GRCh37') {
+        try {
+          const lifted = await decoderClient.liftoverCoordinate(
+            'hg38_to_hg19',
+            externalJumpTarget.chrom,
+            externalJumpTarget.pos,
+            'N'
+          );
+          targetPos = lifted.lifted_pos;
+        } catch {
+          // Keep source coordinate if unmapped
+        }
+      }
+      if (cancelled) return;
+      setSelectedChrom(externalJumpTarget.chrom);
+      setWindowStart(Math.max(1, targetPos - 3000));
+      setWindowEnd(targetPos + 3000);
+      setSelectedVariantPos(targetPos);
+      onExternalJumpConsumedRef.current?.(targetSeq);
+    };
+    void jumpToTarget();
+    return () => {
+      cancelled = true;
+    };
+  }, [externalJumpTarget]);
+
   const activeChromosomesMap = useMemo(() => {
     const map = new Map<string, ChromosomeOverview>();
     const normalizeBuild = (b: string): GenomeAssembly => {
@@ -458,7 +503,23 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
 
   const indexedChips = useMemo<IndexedHotspotChip[]>(() => {
     if (catalogItems.length > 0) {
-      return catalogItems.map((item) => ({
+      // Pick up to 12 diverse chromosome hotspot chips (1 per chromosome first, then highest score)
+      const picked: CatalogVariantItem[] = [];
+      const seenChroms = new Set<string>();
+      for (const item of catalogItems) {
+        if (picked.length >= 12) break;
+        if (!seenChroms.has(item.variant.chrom)) {
+          seenChroms.add(item.variant.chrom);
+          picked.push(item);
+        }
+      }
+      for (const item of catalogItems) {
+        if (picked.length >= 12) break;
+        if (!picked.some((p) => p.key === item.key)) {
+          picked.push(item);
+        }
+      }
+      return picked.map((item) => ({
         key: item.key,
         label: item.variant.gene
           ? `${item.variant.gene} (${item.variant.id})`
@@ -471,7 +532,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
       }));
     }
 
-    const leaves = lastQueryResult?.session.rootLeaves ?? [];
+    const leaves = (lastQueryResult?.session.rootLeaves ?? []).slice(0, 12);
     return leaves.map((leaf) => ({
       key: `${leaf.chrom_name}:${leaf.max_pos}`,
       label: `${leaf.chrom_name} (${leaf.entry_count})`,

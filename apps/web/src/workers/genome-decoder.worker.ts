@@ -29,6 +29,7 @@ import type {
   WasmDecodedSlice,
   WasmHeaderInfo,
   WasmIndexEntryInfo,
+  WasmIntersectionResult,
   WasmLeafPointerInfo,
   WasmLeafQueryPlan,
   WasmLocalPlasmidDatasetRaw,
@@ -75,10 +76,18 @@ function toUint8Array(input: ArrayBuffer | Uint8Array): Uint8Array {
 export function computeClinvarScore(clinvar?: string | null): number {
   if (!clinvar) return 1.0;
   const lower = clinvar.toLowerCase();
-  if (lower.includes('pathogenic') && !lower.includes('conflict') && !lower.includes('benign')) {
+  if (
+    (lower.includes('pathogenic') || lower.includes('oncogenic')) &&
+    !lower.includes('conflict') &&
+    !lower.includes('benign')
+  ) {
     return 10.0;
   }
-  if (lower.includes('risk')) {
+  if (
+    lower.includes('drug_response') ||
+    lower.includes('drug response') ||
+    lower.includes('risk')
+  ) {
     return 5.0;
   }
   if (lower.includes('uncertain') || lower.includes('vus')) {
@@ -229,8 +238,79 @@ export async function handleWorkerRequest(
         pyramid: raw.pyramid,
         chrom_index: raw.chrom_index,
         variants: raw.variants.map(mapVcfRecordToParsedVariant),
+        raw_variants: raw.variants,
       };
       return { dataset };
+    }
+
+    case 'PLAN_INTERSECTION_LEAVES': {
+      const bytes = toUint8Array(payload.rootDirBuffer);
+      const personalJson =
+        typeof payload.personalVariantsJson === 'string'
+          ? payload.personalVariantsJson
+          : JSON.stringify(payload.personalVariants ?? []);
+      const plan = PlasmidWasmEngine.plan_intersection_leaves(
+        bytes,
+        personalJson,
+        payload.personalBuild ?? 'GRCh38',
+        payload.clinvarBuild ?? 'GRCh38'
+      ) as WasmLeafQueryPlan;
+      return { plan };
+    }
+
+    case 'PLAN_INTERSECTION_CHUNKS': {
+      const bytes = toUint8Array(payload.directoryBuffer);
+      const personalJson =
+        typeof payload.personalVariantsJson === 'string'
+          ? payload.personalVariantsJson
+          : JSON.stringify(payload.personalVariants ?? []);
+      const plan = PlasmidWasmEngine.plan_intersection_chunks(
+        bytes,
+        personalJson,
+        payload.personalBuild ?? 'GRCh38',
+        payload.clinvarBuild ?? 'GRCh38',
+        payload.payloadOffset,
+        payload.chunkSize
+      ) as SlicingPlan;
+      return { plan };
+    }
+
+    case 'INTERSECT_PERSONAL_CLINVAR': {
+      const personalJson =
+        typeof payload.personalVariantsJson === 'string'
+          ? payload.personalVariantsJson
+          : JSON.stringify(payload.personalVariants ?? []);
+      const entriesJson =
+        typeof payload.entriesJson === 'string'
+          ? payload.entriesJson
+          : JSON.stringify(payload.entries ?? []);
+      const chunksBytes = toUint8Array(payload.chunksBuffer);
+      const chunkIndices = new Uint32Array(payload.chunkIndices ?? []);
+      const result = PlasmidWasmEngine.intersect_personal_with_clinvar(
+        personalJson,
+        payload.personalBuild ?? 'GRCh38',
+        entriesJson,
+        chunksBytes,
+        chunkIndices,
+        payload.chunkSize,
+        payload.clinvarBuild ?? 'GRCh38'
+      ) as WasmIntersectionResult;
+      return { result };
+    }
+
+    case 'VERIFY_LOCUS_CONSISTENCY': {
+      const verified = PlasmidWasmEngine.verify_locus_consistency(
+        payload.rsid,
+        payload.chrom,
+        payload.queriedPos,
+        payload.assertedRef,
+        payload.authoritativePos,
+        payload.authoritativeRef,
+        payload.referenceSlice ?? null,
+        payload.sliceStartPos ?? 1,
+        payload.targetBuild ?? 'GRCh38'
+      );
+      return { verified };
     }
 
     case 'PARSE_LOCAL_PLASMID': {
@@ -247,6 +327,7 @@ export async function handleWorkerRequest(
         leaves: raw.leaves,
         entries: raw.entries,
         variants: raw.variants.map(mapVcfRecordToParsedVariant),
+        raw_variants: raw.variants,
       };
       return { dataset };
     }

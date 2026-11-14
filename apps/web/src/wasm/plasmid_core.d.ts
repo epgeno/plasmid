@@ -34,6 +34,10 @@ export class PlasmidWasmEngine {
      */
     static hash_chunk_hex(chunk_bytes: Uint8Array): string;
     /**
+     * Intersects local OPFS personal variants against sliced ClinVar `.plasmid` Zstd chunks in WebAssembly.
+     */
+    static intersect_personal_with_clinvar(personal_variants_json: string, personal_build: string, entries_json: string, chunks_concat: Uint8Array, chunk_indices: Uint32Array, chunk_size: number, clinvar_build: string): any;
+    /**
      * Realtime Liftover of GRCh37 (hg19) coordinate to GRCh38 (hg38) in WebAssembly.
      */
     static liftover_hg19_to_hg38(chrom: string, pos: number, ref_allele: string): any;
@@ -62,6 +66,14 @@ export class PlasmidWasmEngine {
      */
     static parse_vcf_dataset(vcf_bytes: Uint8Array, assembly_hint: string): any;
     /**
+     * Plans minimal 16KB Zstd chunk HTTP Range requests for personal DNA ↔ ClinVar intersection.
+     */
+    static plan_intersection_chunks(directory_bytes: Uint8Array, personal_variants_json: string, personal_build: string, clinvar_build: string, payload_offset: number, chunk_size: number): any;
+    /**
+     * Plans minimal hierarchical Leaf Directory HTTP Range requests for personal DNA ↔ ClinVar intersection.
+     */
+    static plan_intersection_leaves(root_dir_bytes: Uint8Array, personal_variants_json: string, personal_build: string, clinvar_build: string): any;
+    /**
      * Plans minimal HTTP Range Requests from a downloaded .plasmid flat or leaf directory index.
      */
     static plan_range_slice(directory_bytes: Uint8Array, chrom: string, start_pos: number, end_pos: number, payload_offset: number, chunk_size: number): any;
@@ -73,6 +85,10 @@ export class PlasmidWasmEngine {
      * Verifies SHA-256 integrity of a downloaded chunk against an expected 32-byte hash.
      */
     static verify_chunk_hash(chunk_bytes: Uint8Array, expected_hash: Uint8Array): boolean;
+    /**
+     * Verifies locus coordinate & allele consistency against authoritative VCF/FASTA data without synthetic strings.
+     */
+    static verify_locus_consistency(rsid: string, chrom: string, queried_pos: number, asserted_ref: string, authoritative_pos: number, authoritative_ref: string, reference_slice: string | null | undefined, slice_start_pos: number, target_build: string): boolean;
     /**
      * Recomputes full BEP 52 SHA-256 Merkle Tree over container payload chunks and verifies root hash.
      */
@@ -95,6 +111,7 @@ export interface InitOutput {
     readonly plasmidwasmengine_detect_build: (a: number, b: number) => [number, number, number, number];
     readonly plasmidwasmengine_get_assembly_overview: (a: number, b: number) => [number, number, number];
     readonly plasmidwasmengine_hash_chunk_hex: (a: number, b: number) => [number, number];
+    readonly plasmidwasmengine_intersect_personal_with_clinvar: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number];
     readonly plasmidwasmengine_liftover_hg19_to_hg38: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly plasmidwasmengine_liftover_hg38_to_hg19: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly plasmidwasmengine_parse_directory_entries: (a: number, b: number) => [number, number, number];
@@ -102,9 +119,12 @@ export interface InitOutput {
     readonly plasmidwasmengine_parse_local_plasmid: (a: number, b: number) => [number, number, number];
     readonly plasmidwasmengine_parse_root_directory: (a: number, b: number) => [number, number, number];
     readonly plasmidwasmengine_parse_vcf_dataset: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly plasmidwasmengine_plan_intersection_chunks: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
+    readonly plasmidwasmengine_plan_intersection_leaves: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
     readonly plasmidwasmengine_plan_range_slice: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
     readonly plasmidwasmengine_query_root_leaves: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly plasmidwasmengine_verify_chunk_hash: (a: number, b: number, c: number, d: number) => number;
+    readonly plasmidwasmengine_verify_locus_consistency: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number) => [number, number, number];
     readonly plasmidwasmengine_verify_merkle_tree: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly plasmidwasmengine_verify_ref_fingerprint: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;

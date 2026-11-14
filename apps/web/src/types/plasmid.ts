@@ -235,6 +235,64 @@ export interface ParsedVcfDataset {
   pyramid: PyramidIndex;
   chrom_index: WasmChromCoordinateIndex[];
   variants: ParsedVariant[];
+  raw_variants: VcfVariantRecord[];
+}
+
+export interface ClinVarMatchedVariant {
+  key: string;
+  chrom: string;
+  pos: number;
+  personal_pos: number;
+  lifted_from_build: string | null;
+  rsid: string;
+  variation_id: string | null;
+  gene: string | null;
+  reference: string;
+  alternate: string;
+  personal_genotype: string;
+  zygosity: 'Heterozygous' | 'HomozygousAlt' | 'Hemizygous' | 'Observed' | string;
+  clinical_significance: string;
+  significance_category:
+    | 'pathogenic'
+    | 'likely_pathogenic'
+    | 'oncogenic'
+    | 'drug_response'
+    | 'risk_factor'
+    | 'other'
+    | string;
+  review_stars: number;
+  review_status: string;
+  conditions: string[];
+  molecular_consequence: string | null;
+  hgvs: string | null;
+  allele_frequency: number | null;
+}
+
+export interface WasmIntersectionResult {
+  personal_build: string;
+  clinvar_build: string;
+  total_personal_variants: number;
+  carrier_personal_variants: number;
+  lifted_variants_count: number;
+  clinvar_variants_scanned: number;
+  matched_count: number;
+  pathogenic_count: number;
+  likely_pathogenic_count: number;
+  drug_response_count: number;
+  risk_factor_count: number;
+  matches: ClinVarMatchedVariant[];
+  chunk_hashes: WasmChunkHashInfo[];
+}
+
+export interface ClinVarIntersectionReport extends WasmIntersectionResult {
+  vaultFilename: string;
+  clinvarDatasetUrl: string;
+  clinvarTotalFileSize: number;
+  clinvarBytesFetched: number;
+  clinvarChunksAccessed: number[];
+  rangeHeadersIssued: string[];
+  personalBytesSent: 0;
+  elapsedMs: number;
 }
 
 export interface WasmLocalPlasmidDatasetRaw {
@@ -257,4 +315,5 @@ export interface ParsedLocalPlasmidDataset {
   leaves: WasmLeafPointerInfo[];
   entries: WasmIndexEntryInfo[];
   variants: ParsedVariant[];
+  raw_variants: VcfVariantRecord[];
 }

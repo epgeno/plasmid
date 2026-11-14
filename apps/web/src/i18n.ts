@@ -62,6 +62,7 @@ export interface TranslationSchema {
     subtitle: string
     tabs: {
       navigator: string
+      intersection: string
       viewer: string
       liftover: string
       wiki: string
@@ -92,6 +93,46 @@ export interface TranslationSchema {
     quotaLabel: (used: string) => string
     uploadErrorPrefix: string
     dismissBtn: string
+    intersectRunning: string
+    intersectReadyBanner: (matched: number, scanned: number) => string
+    openReportBtn: string
+  }
+  intersection: {
+    title: string
+    subtitle: string
+    emptyTitle: string
+    emptyDesc: string
+    uploadCtaBtn: string
+    runningStatus: string
+    privacyProofBadge: string
+    cardMatchedTitle: string
+    cardMatchedSub: (carriers: number, total: number) => string
+    cardPathogenicTitle: string
+    cardPathogenicSub: (pathogenic: number, likely: number) => string
+    cardPharmacoTitle: string
+    cardPharmacoSub: (drug: number, risk: number) => string
+    cardSlicingTitle: string
+    cardSlicingSub: (chunks: number, kbFetched: string, kbTotal: string) => string
+    liftedNotice: (count: number, fromBuild: string, toBuild: string) => string
+    searchPlaceholder: string
+    filterAll: string
+    filterPathogenic: string
+    filterLikelyPathogenic: string
+    filterDrugResponse: string
+    filterRiskFactor: string
+    minStarsLabel: string
+    starsAll: string
+    noFilteredMatches: string
+    genotypeLabel: string
+    zygosityHet: string
+    zygosityHomAlt: string
+    zygosityHemi: string
+    zygosityObserved: string
+    conditionsLabel: string
+    consequenceLabel: string
+    liftedBadge: (fromBuild: string, origPos: string) => string
+    openInNavigatorBtn: string
+    clinvarLinkLabel: string
   }
   navigator: NavigatorTranslations
   stream: {
@@ -198,6 +239,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       subtitle: '분산형 유전체 위키 & .plasmid 정밀 구간 스트리밍',
       tabs: {
         navigator: '전장 유전체 네비게이터',
+        intersection: '임상 교차 리포트',
         viewer: '데이터 뷰어',
         liftover: '좌표 변환 및 검증',
         wiki: '임상 기록 & 주석',
@@ -214,20 +256,62 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
     },
     vault: {
       title: '개인 유전체 로컬 OPFS 에어갭 볼트',
-      badgeZeroNetwork: '네트워크 요청 0건 • 브라우저 내부 격리',
-      desc: '로컬 .vcf, .plasmid, .txt 파일을 브라우저 전용 격리 저장소(OPFS)에 보관하고 외부 통신 없이 WASM으로 직접 파싱합니다.',
-      dropzonePrompt: '여기에 개인 .vcf / .plasmid / .txt 파일을 드래그하거나 클릭하여 선택',
+      badgeZeroNetwork: '네트워크 전송 0 B • 브라우저 내부 격리',
+      desc: '로컬 .vcf, .vcf.gz, 23andMe .txt, .plasmid 파일을 브라우저 전용 격리 저장소(OPFS)에 보관하고 외부 개인정보 전송 0바이트로 공공 ClinVar Zstd 팩과 로컬 WASM 교차 매칭합니다.',
+      dropzonePrompt: '여기에 개인 .vcf / .vcf.gz / .txt / .plasmid 파일을 드래그하거나 클릭하여 선택',
       dropzoneActive: '파일을 놓아 브라우저 OPFS 에어갭 볼트에 격리 저장',
       selectFileBtn: '로컬 파일 불러오기',
       importingStatus: 'OPFS 격리 저장 및 WASM 파싱 중…',
       sourceLabel: '활성 데이터 소스',
-      publicDemoSource: '공공 참조 (demo.plasmid)',
+      publicDemoSource: '공공 ClinVar Zstd 팩 (demo.plasmid)',
       vaultFileBadge: 'OPFS 볼트',
       deleteVaultBtn: '삭제',
       deleteVaultAria: (name) => `OPFS 볼트에서 ${name} 삭제`,
       quotaLabel: (used) => `OPFS 사용량: ${used}`,
       uploadErrorPrefix: '로컬 볼트 파일 오류:',
       dismissBtn: '닫기',
+      intersectRunning: '로컬 WASM에서 공공 ClinVar Zstd 청크와 개인 변이를 교차 매칭하는 중…',
+      intersectReadyBanner: (matched, scanned) =>
+        `ClinVar 교차 매칭 완료: 임상 변이 ${matched}건 일치 (스캔된 ClinVar 레코드 ${scanned.toLocaleString()}건 • 개인 데이터 전송 0 B)`,
+      openReportBtn: '임상 교차 리포트 열기',
+    },
+    intersection: {
+      title: '개인 DNA ↔ 공공 ClinVar Zstd 교차 매칭 리포트',
+      subtitle: '개인 유전체는 OPFS 샌드박스 내부에 100% 격리(외부 전송 0 B)한 채, 일치 염색체의 공공 ClinVar 16KB Zstd 머클 청크만 HTTP 206 슬라이싱해 로컬 WASM에서 교차 분석합니다.',
+      emptyTitle: '업로드된 개인 유전체 파일이 없습니다',
+      emptyDesc: '상단 OPFS 에어갭 볼트에 개인 .vcf, .vcf.gz 또는 23andMe .txt 파일을 불러오면 외부 서버로 단 1바이트도 전송하지 않고 로컬 WASM에서 병원성·약물반응 변이를 즉시 교차 매칭합니다.',
+      uploadCtaBtn: '개인 .vcf / .vcf.gz / .txt 불러오기',
+      runningStatus: 'HTTP 206 ClinVar Zstd 청크 슬라이싱 및 로컬 WASM 대립유전자 교차 매칭 중…',
+      privacyProofBadge: '개인 데이터 외부 전송 0 B 검증됨',
+      cardMatchedTitle: '일치 임상 변이',
+      cardMatchedSub: (carriers, total) => `보인 대립유전자 ${carriers}건 / 입력 ${total}건`,
+      cardPathogenicTitle: '병원성 / 유사병원성',
+      cardPathogenicSub: (p, lp) => `병원성·종양성 ${p}건 • 유사병원성 ${lp}건`,
+      cardPharmacoTitle: '약물반응 & 위험인자',
+      cardPharmacoSub: (drug, risk) => `약물유전체 ${drug}건 • 위험인자 ${risk}건`,
+      cardSlicingTitle: 'ClinVar HTTP 206 슬라이싱',
+      cardSlicingSub: (chunks, kbFetched, kbTotal) => `${chunks}개 Zstd 청크 (${kbFetched} / ${kbTotal} KB)`,
+      liftedNotice: (count, fromB, toB) =>
+        `입력 변이 ${count}건의 ${fromB} 좌표를 내장 UCSC 체인을 통해 ${toB} 좌표계로 자동 변환 후 대립유전자 일치 여부를 검증했습니다.`,
+      searchPlaceholder: '유전자(BRCA2, APOE, HBB), rsID(rs7412), 질환명 검색…',
+      filterAll: '전체',
+      filterPathogenic: '병원성/종양성',
+      filterLikelyPathogenic: '유사병원성',
+      filterDrugResponse: '약물반응',
+      filterRiskFactor: '위험인자',
+      minStarsLabel: '근거 등급',
+      starsAll: '전체 별점',
+      noFilteredMatches: '선택한 필터 또는 검색어와 일치하는 임상 변이가 없습니다.',
+      genotypeLabel: '개인 유전형',
+      zygosityHet: '이형접합 (Het)',
+      zygosityHomAlt: '변이 동형접합 (Hom-Alt)',
+      zygosityHemi: '반접합 (Hemi)',
+      zygosityObserved: '변이 검출',
+      conditionsLabel: '연관 임상 표현형 (ClinVar CLNDN)',
+      consequenceLabel: '분자적 결과',
+      liftedBadge: (fromB, origPos) => `${fromB} ${origPos}에서 자동 변환됨`,
+      openInNavigatorBtn: '네비게이터에서 위치 보기',
+      clinvarLinkLabel: 'ClinVar 원문',
     },
     navigator: {
       title: '다중 스케일 전장 유전체 네비게이터',
@@ -382,6 +466,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       subtitle: 'Decentralized Genomic Wiki & .plasmid Byte-Range Streaming',
       tabs: {
         navigator: 'Genome Navigator',
+        intersection: 'ClinVar Match',
         viewer: 'Data Viewer',
         liftover: 'Assembly Liftover',
         wiki: 'Clinical Notes',
@@ -398,20 +483,62 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
     },
     vault: {
       title: 'Private Genome OPFS Air-Gap Vault',
-      badgeZeroNetwork: '0 Network Requests • Browser Sandbox',
-      desc: 'Store local .vcf, .plasmid, or .txt files inside Origin Private File System (OPFS) and decode them strictly via local WebAssembly with zero network traffic.',
-      dropzonePrompt: 'Drag & drop a local .vcf / .plasmid / .txt file here, or click to browse',
+      badgeZeroNetwork: '0 B Personal Data Sent • Browser Sandbox',
+      desc: 'Store local .vcf, .vcf.gz, 23andMe .txt, or .plasmid files inside OPFS and intersect them against the public ClinVar Zstd pack locally in WebAssembly with zero outbound personal bytes.',
+      dropzonePrompt: 'Drag & drop a local .vcf / .vcf.gz / .txt / .plasmid file here, or click to browse',
       dropzoneActive: 'Release to store file inside isolated OPFS Air-Gap Vault',
       selectFileBtn: 'Import Local File',
       importingStatus: 'Saving to OPFS & parsing via WASM…',
       sourceLabel: 'Active Data Source',
-      publicDemoSource: 'Public Demo (demo.plasmid)',
+      publicDemoSource: 'Public ClinVar Zstd Pack (demo.plasmid)',
       vaultFileBadge: 'OPFS Vault',
       deleteVaultBtn: 'Delete',
       deleteVaultAria: (name) => `Delete ${name} from OPFS Vault`,
       quotaLabel: (used) => `OPFS Used: ${used}`,
       uploadErrorPrefix: 'Local Vault File Error:',
       dismissBtn: 'Dismiss',
+      intersectRunning: 'Intersecting local OPFS variants with public ClinVar Zstd chunks in WASM…',
+      intersectReadyBanner: (matched, scanned) =>
+        `ClinVar Intersection Ready: ${matched} clinical match(es) across ${scanned.toLocaleString()} ClinVar records (0 B personal data sent)`,
+      openReportBtn: 'Open ClinVar Report',
+    },
+    intersection: {
+      title: 'Personal DNA ↔ Public ClinVar Zstd Intersection Report',
+      subtitle: 'Your personal variants never leave OPFS (0 B outbound). Only coarse 16KB Zstd Merkle chunks from the public ClinVar .plasmid pack are HTTP 206 range-sliced and intersected locally in Rust/WASM.',
+      emptyTitle: 'No Personal Genome Loaded in OPFS Vault',
+      emptyDesc: 'Import a personal .vcf, .vcf.gz, or 23andMe .txt file into the OPFS Air-Gap Vault above to screen against NCBI ClinVar entirely inside local WebAssembly.',
+      uploadCtaBtn: 'Import Personal .vcf / .vcf.gz / .txt',
+      runningStatus: 'Slicing public ClinVar Zstd chunks via HTTP 206 & matching alleles in WASM…',
+      privacyProofBadge: '0 B Outbound Personal Data Verified',
+      cardMatchedTitle: 'Matched Clinical Loci',
+      cardMatchedSub: (carriers, total) => `${carriers} carrier call(s) of ${total} uploaded`,
+      cardPathogenicTitle: 'Pathogenic / Likely Path.',
+      cardPathogenicSub: (p, lp) => `${p} pathogenic/oncogenic • ${lp} likely pathogenic`,
+      cardPharmacoTitle: 'Drug Response & Risk',
+      cardPharmacoSub: (drug, risk) => `${drug} pharmacogenomic • ${risk} risk factor`,
+      cardSlicingTitle: 'ClinVar HTTP 206 Slicing',
+      cardSlicingSub: (chunks, kbFetched, kbTotal) => `${chunks} Zstd chunk(s) (${kbFetched} / ${kbTotal} KB)`,
+      liftedNotice: (count, fromB, toB) =>
+        `Automatically lifted ${count} personal variant(s) from ${fromB} to ${toB} via the embedded UCSC syntenic chain prior to allele matching.`,
+      searchPlaceholder: 'Filter by gene (BRCA2, APOE, HBB), rsID (rs7412), or condition…',
+      filterAll: 'All',
+      filterPathogenic: 'Pathogenic/Oncogenic',
+      filterLikelyPathogenic: 'Likely Pathogenic',
+      filterDrugResponse: 'Drug Response',
+      filterRiskFactor: 'Risk Factor',
+      minStarsLabel: 'Evidence Tier',
+      starsAll: 'All Stars',
+      noFilteredMatches: 'No matched clinical variants fit the current search or filter criteria.',
+      genotypeLabel: 'Genotype',
+      zygosityHet: 'Heterozygous',
+      zygosityHomAlt: 'Homozygous Alt',
+      zygosityHemi: 'Hemizygous',
+      zygosityObserved: 'Observed',
+      conditionsLabel: 'Associated Conditions (ClinVar CLNDN)',
+      consequenceLabel: 'Consequence',
+      liftedBadge: (fromB, origPos) => `Lifted from ${fromB} ${origPos}`,
+      openInNavigatorBtn: 'Inspect in Navigator',
+      clinvarLinkLabel: 'NCBI ClinVar',
     },
     navigator: {
       title: 'Multi-scale Whole-Genome Navigator',
@@ -566,6 +693,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       subtitle: '去中心化基因组百科与 .plasmid 字节范围流引擎',
       tabs: {
         navigator: '全基因组导航',
+        intersection: 'ClinVar 匹配报告',
         viewer: '数据查看器',
         liftover: '坐标转换与校验',
         wiki: '临床记录与注释',
@@ -582,20 +710,62 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
     },
     vault: {
       title: '个人基因组本地 OPFS 空气隔离保险库',
-      badgeZeroNetwork: '零网络请求 • 浏览器本地隔离',
-      desc: '将本地 .vcf、.plasmid 或 .txt 文件保存在浏览器私有文件系统 (OPFS) 中，在不发起任何网络请求的情况下通过本地 WASM 解码。',
-      dropzonePrompt: '将本地 .vcf / .plasmid / .txt 文件拖放至此处，或点击选择文件',
+      badgeZeroNetwork: '个人数据零上传 • 浏览器本地隔离',
+      desc: '将本地 .vcf、.vcf.gz、23andMe .txt 或 .plasmid 文件保存在浏览器 OPFS 中，个人数据零外发即可与公共 ClinVar Zstd 包在本地 WASM 内完成交叉匹配。',
+      dropzonePrompt: '将本地 .vcf / .vcf.gz / .txt / .plasmid 文件拖放至此处，或点击选择文件',
       dropzoneActive: '释放鼠标以保存至隔离的 OPFS 空气隔离保险库',
       selectFileBtn: '导入本地文件',
       importingStatus: '正在写入 OPFS 并通过 WASM 解析…',
       sourceLabel: '当前数据源',
-      publicDemoSource: '公共示例 (demo.plasmid)',
+      publicDemoSource: '公共 ClinVar Zstd 包 (demo.plasmid)',
       vaultFileBadge: 'OPFS 保险库',
       deleteVaultBtn: '删除',
       deleteVaultAria: (name) => `从 OPFS 保险库删除 ${name}`,
       quotaLabel: (used) => `OPFS 已用: ${used}`,
       uploadErrorPrefix: '本地保险库文件错误：',
       dismissBtn: '关闭',
+      intersectRunning: '正在本地 WASM 中与公共 ClinVar Zstd 数据块交叉比对…',
+      intersectReadyBanner: (matched, scanned) =>
+        `ClinVar 交叉匹配完成：检出 ${matched} 项临床变异（扫描 ${scanned.toLocaleString()} 条 ClinVar 记录 • 个人数据发送 0 B）`,
+      openReportBtn: '查看临床匹配报告',
+    },
+    intersection: {
+      title: '个人 DNA ↔ 公共 ClinVar Zstd 交叉匹配报告',
+      subtitle: '个人基因组完全隔离于 OPFS 沙箱内（外发 0 B），仅通过 HTTP 206 按需切片公共 ClinVar 16KB Zstd 默克尔块并在本地 Rust/WASM 中完成等位基因比对。',
+      emptyTitle: '尚未加载个人基因组文件',
+      emptyDesc: '请在上方 OPFS 空气隔离保险库导入个人 .vcf、.vcf.gz 或 23andMe .txt 文件，无需上传任何个人数据即可在本地 WASM 筛查致病及药物反应变异。',
+      uploadCtaBtn: '导入个人 .vcf / .vcf.gz / .txt',
+      runningStatus: '正在通过 HTTP 206 获取公共 ClinVar Zstd 切片并在 WASM 中比对…',
+      privacyProofBadge: '已验证：个人数据外发 0 B',
+      cardMatchedTitle: '匹配临床变异',
+      cardMatchedSub: (carriers, total) => `携带变异 ${carriers} 项 / 共上传 ${total} 项`,
+      cardPathogenicTitle: '致病 / 可能致病',
+      cardPathogenicSub: (p, lp) => `致病/致癌 ${p} 项 • 可能致病 ${lp} 项`,
+      cardPharmacoTitle: '药物反应与风险因子',
+      cardPharmacoSub: (drug, risk) => `药物基因组 ${drug} 项 • 风险因子 ${risk} 项`,
+      cardSlicingTitle: 'ClinVar HTTP 206 切片',
+      cardSlicingSub: (chunks, kbFetched, kbTotal) => `${chunks} 个 Zstd 块 (${kbFetched} / ${kbTotal} KB)`,
+      liftedNotice: (count, fromB, toB) =>
+        `已通过内置 UCSC 链将 ${count} 项 ${fromB} 个人变异自动转换至 ${toB} 坐标并校验等位基因。`,
+      searchPlaceholder: '搜索基因 (BRCA2, APOE, HBB)、rsID (rs7412) 或疾病名称…',
+      filterAll: '全部',
+      filterPathogenic: '致病/致癌',
+      filterLikelyPathogenic: '可能致病',
+      filterDrugResponse: '药物反应',
+      filterRiskFactor: '风险因子',
+      minStarsLabel: '证据星级',
+      starsAll: '全部星级',
+      noFilteredMatches: '当前筛选或搜索条件下没有匹配的临床变异。',
+      genotypeLabel: '个人基因型',
+      zygosityHet: '杂合 (Het)',
+      zygosityHomAlt: '纯合变异 (Hom-Alt)',
+      zygosityHemi: '半合 (Hemi)',
+      zygosityObserved: '检出变异',
+      conditionsLabel: '关联临床表型 (ClinVar CLNDN)',
+      consequenceLabel: '分子后果',
+      liftedBadge: (fromB, origPos) => `自 ${fromB} ${origPos} 自动转换`,
+      openInNavigatorBtn: '在导航器中查看',
+      clinvarLinkLabel: 'NCBI ClinVar',
     },
     navigator: {
       title: '多尺度全基因组导航器',
@@ -750,6 +920,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       subtitle: '分散型ゲノムWiki＆.plasmid バイト範囲ストリーミング',
       tabs: {
         navigator: '全ゲノムナビゲーター',
+        intersection: 'ClinVar 照合レポート',
         viewer: 'データビューア',
         liftover: '座標変換・整合性検証',
         wiki: '臨床記録・注釈',
@@ -766,20 +937,62 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
     },
     vault: {
       title: '個人ゲノム OPFS エアギャップ保管庫',
-      badgeZeroNetwork: '通信 0件 • ブラウザ内完全隔離',
-      desc: 'ローカルの .vcf・.plasmid・.txt ファイルをブラウザ専用領域 (OPFS) に隔離保存し、外部通信ゼロでローカル WASM により解析します。',
-      dropzonePrompt: 'ここに個人 .vcf / .plasmid / .txt ファイルをドロップ、またはクリックして選択',
+      badgeZeroNetwork: '個人データ送信 0 B • ブラウザ内完全隔離',
+      desc: 'ローカルの .vcf・.vcf.gz・23andMe .txt・.plasmid ファイルを OPFS に隔離保存し、個人データを一切外部送信せず公共 ClinVar Zstd パックとローカル WASM で交差照合します。',
+      dropzonePrompt: 'ここに個人 .vcf / .vcf.gz / .txt / .plasmid ファイルをドロップ、またはクリックして選択',
       dropzoneActive: 'ドロップして OPFS エアギャップ保管庫へ隔離保存',
       selectFileBtn: 'ローカルファイル読込',
       importingStatus: 'OPFS 隔離保存および WASM 解析中…',
       sourceLabel: '有効データソース',
-      publicDemoSource: '公共デモ (demo.plasmid)',
+      publicDemoSource: '公共 ClinVar Zstd パック (demo.plasmid)',
       vaultFileBadge: 'OPFS 保管庫',
       deleteVaultBtn: '削除',
       deleteVaultAria: (name) => `OPFS 保管庫から ${name} を削除`,
       quotaLabel: (used) => `OPFS 使用量: ${used}`,
       uploadErrorPrefix: 'ローカル保管庫エラー:',
       dismissBtn: '閉じる',
+      intersectRunning: 'ローカル WASM で公共 ClinVar Zstd チャンクと交差照合中…',
+      intersectReadyBanner: (matched, scanned) =>
+        `ClinVar 照合完了: 臨床変異 ${matched} 件一致 (走査 ClinVar ${scanned.toLocaleString()} 件 • 個人データ送信 0 B)`,
+      openReportBtn: '臨床照合レポートを開く',
+    },
+    intersection: {
+      title: '個人 DNA ↔ 公共 ClinVar Zstd 交差照合レポート',
+      subtitle: '個人ゲノムは OPFS サンドボックス内に完全隔離（外部送信 0 B）したまま、該当染色体の公共 ClinVar 16KB Zstd マークルチャンクのみを HTTP 206 取得しローカル Rust/WASM で照合します。',
+      emptyTitle: 'OPFS 保管庫に個人ゲノムファイルがありません',
+      emptyDesc: '上部の OPFS エアギャップ保管庫に個人 .vcf・.vcf.gz または 23andMe .txt ファイルを読み込むと、外部送信ゼロで ClinVar 病原性・薬物応答変異を即座に照合します。',
+      uploadCtaBtn: '個人 .vcf / .vcf.gz / .txt を読み込む',
+      runningStatus: 'HTTP 206 ClinVar Zstd チャンク取得および WASM アレル照合中…',
+      privacyProofBadge: '個人データ外部送信 0 B 検証済み',
+      cardMatchedTitle: '一致した臨床変異',
+      cardMatchedSub: (carriers, total) => `保有変異 ${carriers} 件 / 入力 ${total} 件`,
+      cardPathogenicTitle: '病原性 / 準病原性',
+      cardPathogenicSub: (p, lp) => `病原性・腫瘍性 ${p} 件 • 準病原性 ${lp} 件`,
+      cardPharmacoTitle: '薬物応答・リスク因子',
+      cardPharmacoSub: (drug, risk) => `薬理ゲノム ${drug} 件 • リスク因子 ${risk} 件`,
+      cardSlicingTitle: 'ClinVar HTTP 206 取得',
+      cardSlicingSub: (chunks, kbFetched, kbTotal) => `${chunks} Zstd チャンク (${kbFetched} / ${kbTotal} KB)`,
+      liftedNotice: (count, fromB, toB) =>
+        `内蔵 UCSC チェーンにより ${count} 件の個人変異を ${fromB} から ${toB} へ自動座標変換した上でアレル一致を検証しました。`,
+      searchPlaceholder: '遺伝子 (BRCA2, APOE, HBB)、rsID (rs7412)、疾患名で検索…',
+      filterAll: 'すべて',
+      filterPathogenic: '病原性/腫瘍性',
+      filterLikelyPathogenic: '準病原性',
+      filterDrugResponse: '薬物応答',
+      filterRiskFactor: 'リスク因子',
+      minStarsLabel: '根拠ランク',
+      starsAll: '全スター',
+      noFilteredMatches: '選択されたフィルタまたは検索条件に一致する臨床変異はありません。',
+      genotypeLabel: '個人遺伝子型',
+      zygosityHet: 'ヘテロ接合 (Het)',
+      zygosityHomAlt: '変異ホモ接合 (Hom-Alt)',
+      zygosityHemi: 'ヘミ接合 (Hemi)',
+      zygosityObserved: '変異検出',
+      conditionsLabel: '関連臨床表現型 (ClinVar CLNDN)',
+      consequenceLabel: '分子影響',
+      liftedBadge: (fromB, origPos) => `${fromB} ${origPos} から自動変換`,
+      openInNavigatorBtn: 'ナビゲーターで表示',
+      clinvarLinkLabel: 'NCBI ClinVar',
     },
     navigator: {
       title: 'マルチスケール全ゲノムナビゲーター',

@@ -13,9 +13,11 @@ import type {
   PyramidIndex,
   SlicingPlan,
   UnifiedGenomicSlice,
+  VcfVariantRecord,
   WasmChunkHashInfo,
   WasmHeaderInfo,
   WasmIndexEntryInfo,
+  WasmIntersectionResult,
   WasmLeafPointerInfo,
   WasmLeafQueryPlan,
   WasmMerkleVerification,
@@ -278,6 +280,88 @@ class DecoderWorkerClient {
       }
     );
     return res.verified;
+  }
+
+  public async verifyLocusConsistency(params: {
+    rsid: string;
+    chrom: string;
+    queriedPos: number;
+    assertedRef: string;
+    authoritativePos: number;
+    authoritativeRef: string;
+    referenceSlice?: string | null;
+    sliceStartPos?: number;
+    targetBuild: GenomeAssembly;
+  }): Promise<boolean> {
+    const res = await this.callWorker<{ verified: boolean }>(
+      'VERIFY_LOCUS_CONSISTENCY',
+      params
+    );
+    return res.verified;
+  }
+
+  public async planIntersectionLeaves(
+    rootDirBuffer: Uint8Array,
+    personalVariants: VcfVariantRecord[],
+    personalBuild: string,
+    clinvarBuild: string
+  ): Promise<WasmLeafQueryPlan> {
+    const res = await this.callWorker<{ plan: WasmLeafQueryPlan }>(
+      'PLAN_INTERSECTION_LEAVES',
+      {
+        rootDirBuffer,
+        personalVariants,
+        personalBuild,
+        clinvarBuild,
+      }
+    );
+    return res.plan;
+  }
+
+  public async planIntersectionChunks(
+    directoryBuffer: Uint8Array,
+    personalVariants: VcfVariantRecord[],
+    personalBuild: string,
+    clinvarBuild: string,
+    payloadOffset: number,
+    chunkSize: number
+  ): Promise<SlicingPlan> {
+    const res = await this.callWorker<{ plan: SlicingPlan }>(
+      'PLAN_INTERSECTION_CHUNKS',
+      {
+        directoryBuffer,
+        personalVariants,
+        personalBuild,
+        clinvarBuild,
+        payloadOffset,
+        chunkSize,
+      }
+    );
+    return res.plan;
+  }
+
+  public async intersectPersonalWithClinvar(
+    personalVariants: VcfVariantRecord[],
+    personalBuild: string,
+    entries: PlasmidIndexEntry[],
+    chunksBuffer: Uint8Array,
+    chunkIndices: number[],
+    chunkSize: number,
+    clinvarBuild: string
+  ): Promise<WasmIntersectionResult> {
+    const res = await this.callWorker<{ result: WasmIntersectionResult }>(
+      'INTERSECT_PERSONAL_CLINVAR',
+      {
+        personalVariants,
+        personalBuild,
+        entries,
+        chunksBuffer,
+        chunkIndices,
+        chunkSize,
+        clinvarBuild,
+      }
+    );
+    return res.result;
   }
 
   public async computeDensityBins(

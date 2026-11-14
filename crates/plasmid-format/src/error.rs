@@ -26,6 +26,15 @@ pub enum PlasmidFormatError {
     #[error("Corrupted directory index")]
     CorruptedIndex,
 
+    #[error("Unsupported compression codec id: {0}")]
+    UnsupportedCodec(u8),
+
+    #[error("Compression error ({codec}): {reason}")]
+    Compression { codec: String, reason: String },
+
+    #[error("Decompression error ({codec}): {reason}")]
+    Decompression { codec: String, reason: String },
+
     #[error("Serialization error: {0}")]
     Serialization(String),
 }

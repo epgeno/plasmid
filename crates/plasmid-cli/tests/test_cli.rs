@@ -49,6 +49,7 @@ fn test_cli_build_inspect_verify_query_e2e() {
         hierarchical: false,
         entries_per_leaf: 64,
         metadata: None,
+        compress: "raw".to_string(),
     };
     plasmid_cli::commands::build::execute(build_args).expect("build flat container");
 
@@ -93,6 +94,7 @@ fn test_cli_build_inspect_verify_query_e2e() {
         hierarchical: true,
         entries_per_leaf: 2,
         metadata: None,
+        compress: "raw".to_string(),
     };
     plasmid_cli::commands::build::execute(hier_build_args).expect("build hierarchical container");
 
@@ -203,6 +205,7 @@ fn test_cli_vcf_batch_packing_into_16kb_chunks() {
         hierarchical: true,
         entries_per_leaf: 16,
         metadata: None,
+        compress: "raw".to_string(),
     };
     plasmid_cli::commands::build::execute(build_args).expect("build packed hierarchical container");
 
@@ -230,4 +233,86 @@ fn test_cli_vcf_batch_packing_into_16kb_chunks() {
     assert_eq!(sub_slice.variants[0].pos, 140_450_200);
     assert_eq!(sub_slice.variants[1].pos, 140_450_300);
     assert_eq!(sub_slice.variants[2].pos, 140_450_400);
+}
+
+#[test]
+fn test_cli_vcf_gz_and_zstd_clinvar_pack_e2e() {
+    let dir = tempdir().expect("create tempdir");
+    let vcf_gz_path = dir.path().join("sample_clinvar.vcf.gz");
+
+    let mut raw_vcf = String::from(
+        "##fileformat=VCFv4.1\n##fileDate=2026-11-01\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n",
+    );
+    for i in 0..400u64 {
+        let pos = 140_750_000 + i * 25;
+        raw_vcf.push_str(&format!(
+            "7\t{pos}\t{id}\tA\tT\t.\t.\tALLELEID={id};CLNDN=Melanoma;CLNREVSTAT=reviewed_by_expert_panel;CLNSIG=Pathogenic;GENEINFO=BRAF:673;RS={rs}\n",
+            id = 10_000 + i,
+            rs = 113_488_000 + i
+        ));
+    }
+    raw_vcf.push_str(
+        "19\t44908822\t17848\tC\tT\t.\t.\tALLELEID=32885;CLNDN=Hyperlipoproteinemia_type_III;CLNREVSTAT=practice_guideline;CLNSIG=drug_response;GENEINFO=APOE:348;RS=7412\n",
+    );
+
+    let gz_bytes = plasmid_format::compress_payload(
+        plasmid_format::CompressionCodec::Bgzf,
+        raw_vcf.as_bytes(),
+    )
+    .unwrap();
+    fs::write(&vcf_gz_path, gz_bytes).unwrap();
+
+    // 1. Test `plasmid build --vcf sample.vcf.gz --compress zstd --hierarchical`
+    let zstd_out = dir.path().join("built_zstd.plasmid");
+    plasmid_cli::commands::build::execute(plasmid_cli::commands::build::BuildArgs {
+        vcf: Some(vcf_gz_path.clone()),
+        fasta: None,
+        annotation: None,
+        output: zstd_out.clone(),
+        reference: "GRCh38".to_string(),
+        hierarchical: true,
+        entries_per_leaf: 32,
+        metadata: None,
+        compress: "zstd".to_string(),
+    })
+    .expect("build zstd from .vcf.gz");
+
+    plasmid_cli::commands::verify::execute(plasmid_cli::commands::verify::VerifyArgs {
+        path: zstd_out.clone(),
+        verbose: false,
+    })
+    .expect("verify zstd container");
+
+    // 2. Test `plasmid clinvar-pack`
+    let packed_out = dir.path().join("clinvar_packed.plasmid");
+    plasmid_cli::commands::clinvar_pack::execute(
+        plasmid_cli::commands::clinvar_pack::ClinvarPackArgs {
+            input: vcf_gz_path,
+            output: packed_out.clone(),
+            reference: "GRCh38".to_string(),
+            max_variants: 1000,
+            min_stars: 2,
+            entries_per_leaf: 32,
+        },
+    )
+    .expect("clinvar-pack zstd container");
+
+    let mut reader = plasmid_format::PlasmidReader::new(File::open(&packed_out).unwrap()).unwrap();
+    assert!(reader.verify_integrity().unwrap());
+    let entries = reader.read_all_entries().unwrap();
+    assert!(
+        entries
+            .iter()
+            .all(|e| e.codec().unwrap() == plasmid_format::CompressionCodec::Zstd)
+    );
+    let apoe_slice = plasmid_core::decoder::GenomicCoordinator::decode_slice(
+        &mut reader,
+        "chr19",
+        44_908_800,
+        44_908_850,
+    )
+    .unwrap();
+    assert_eq!(apoe_slice.variants.len(), 1);
+    assert_eq!(apoe_slice.variants[0].gene.as_deref(), Some("APOE"));
+    assert_eq!(apoe_slice.variants[0].id.as_deref(), Some("rs7412"));
 }
