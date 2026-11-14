@@ -19,33 +19,51 @@ pub struct SubmitterStarRating {
 
 impl SubmitterStarRating {
     pub fn from_review_status(status: &str) -> Self {
-        let clean = status.trim().to_lowercase();
-        if clean.contains("practice guideline") || clean.contains("practice_guideline") {
+        let normalized: String = status
+            .trim()
+            .to_lowercase()
+            .chars()
+            .map(|c| if c == '_' || c == ',' { ' ' } else { c })
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        if normalized.contains("practice guideline") {
             Self {
                 stars: 4,
                 label: "Practice guideline (Highest clinical confidence)".to_string(),
                 criteria_provided: true,
             }
-        } else if clean.contains("expert panel") || clean.contains("reviewed_by_expert_panel") {
+        } else if normalized.contains("expert panel") {
             Self {
                 stars: 3,
                 label: "Reviewed by expert panel".to_string(),
                 criteria_provided: true,
             }
-        } else if clean.contains("multiple submitters")
-            || clean.contains("criteria_provided_multiple_submitters_no_conflicts")
+        } else if normalized.contains("multiple submitters") && normalized.contains("no conflicts")
         {
             Self {
                 stars: 2,
                 label: "Criteria provided, multiple submitters, no conflicts".to_string(),
                 criteria_provided: true,
             }
-        } else if clean.contains("single submitter")
-            || clean.contains("criteria_provided_single_submitter")
+        } else if normalized.contains("multiple submitters") {
+            Self {
+                stars: 2,
+                label: "Criteria provided, multiple submitters".to_string(),
+                criteria_provided: true,
+            }
+        } else if normalized.contains("single submitter")
+            || (normalized.contains("criteria provided") && normalized.contains("conflicting"))
         {
             Self {
                 stars: 1,
-                label: "Criteria provided, single submitter".to_string(),
+                label: if normalized.contains("conflicting") {
+                    "Criteria provided, conflicting classifications".to_string()
+                } else {
+                    "Criteria provided, single submitter".to_string()
+                },
                 criteria_provided: true,
             }
         } else {

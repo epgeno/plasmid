@@ -1,3 +1,4 @@
+use crate::codec::{CODEC_MASK, CompressionCodec};
 use crate::error::{PlasmidFormatError, Result};
 use serde::{Deserialize, Serialize};
 
@@ -42,6 +43,15 @@ pub struct PlasmidIndexEntry {
 }
 
 impl PlasmidIndexEntry {
+    pub fn codec(&self) -> Result<CompressionCodec> {
+        CompressionCodec::try_from(self.flags & CODEC_MASK)
+    }
+
+    pub fn with_codec(mut self, codec: CompressionCodec) -> Self {
+        self.flags = (self.flags & !CODEC_MASK) | (codec as u8);
+        self
+    }
+
     pub fn serialize(&self) -> [u8; INDEX_ENTRY_SIZE] {
         let mut buf = [0u8; INDEX_ENTRY_SIZE];
         buf[0..2].copy_from_slice(&self.chrom_id.to_le_bytes());

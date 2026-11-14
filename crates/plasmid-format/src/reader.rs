@@ -1,3 +1,4 @@
+use crate::codec::decompress_payload;
 use crate::error::{PlasmidFormatError, Result};
 use crate::header::{FLAG_HIERARCHICAL_INDEX, PlasmidHeader};
 use crate::index::{
@@ -78,8 +79,8 @@ impl<R: Read + Seek> PlasmidReader<R> {
         Ok(buf)
     }
 
-    /// Reads payload for a given index entry
-    pub fn read_entry_payload(&mut self, entry: &PlasmidIndexEntry) -> Result<Vec<u8>> {
+    /// Reads stored (compressed or raw) payload bytes for a given index entry prior to codec decompression.
+    pub fn read_entry_raw_payload(&mut self, entry: &PlasmidIndexEntry) -> Result<Vec<u8>> {
         let mut combined = Vec::with_capacity(entry.payload_bytes as usize);
         for c in 0..entry.chunk_count {
             let chunk_data = self.read_chunk(entry.chunk_start + c)?;
@@ -87,6 +88,13 @@ impl<R: Read + Seek> PlasmidReader<R> {
         }
         combined.truncate(entry.payload_bytes as usize);
         Ok(combined)
+    }
+
+    /// Reads and decompresses payload for a given index entry according to its RFC-0001 codec (`Raw`, `Bgzf`, `Zstd`).
+    pub fn read_entry_payload(&mut self, entry: &PlasmidIndexEntry) -> Result<Vec<u8>> {
+        let raw_stored = self.read_entry_raw_payload(entry)?;
+        let codec = entry.codec()?;
+        decompress_payload(codec, &raw_stored)
     }
 
     /// Range query genomic coordinates for flat index

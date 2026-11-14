@@ -1,4 +1,5 @@
 use crate::chrom::{chrom_to_id, id_to_chrom};
+use crate::decoder::vcf::MAX_VCF_DECOMPRESSED_BYTES;
 use crate::decoder::{GenomicCoordinator, UnifiedGenomicSlice, VcfDecoder, VcfVariantRecord};
 use crate::error::{PlasmidCoreError, Result};
 use crate::liftover::{CoordinateGuard, GenomeBuild};
@@ -6,14 +7,20 @@ use crate::pyramid::PyramidIndex;
 use crate::slicing::{ByteRange, RangePlanner, SlicingPlan, coalesce_byte_ranges};
 use plasmid_format::{
     EntryType, FLAG_HIERARCHICAL_INDEX, HEADER_SIZE, MerkleTree, PlasmidDirectory, PlasmidHeader,
-    PlasmidIndexEntry, PlasmidLeafPointer, PlasmidReader, PlasmidRootDirectory, hash_leaf,
+    PlasmidIndexEntry, PlasmidLeafPointer, PlasmidReader, PlasmidRootDirectory,
+    decompress_gzip_bounded, decompress_payload, hash_leaf, is_gzip_magic,
 };
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Cursor;
 
 #[cfg(feature = "wasm")]
 use crate::decoder::{AnnotationDecoder, FastaDecoder};
+#[cfg(feature = "wasm")]
+use crate::intersection::{
+    intersect_personal_with_clinvar_dto, plan_intersection_chunks_dto, plan_intersection_leaves_dto,
+};
 #[cfg(feature = "wasm")]
 use crate::liftover::LiftoverEngine;
 #[cfg(feature = "wasm")]
@@ -296,7 +303,8 @@ pub fn decode_planned_slice_dto(
             combined.extend_from_slice(chunk_bytes);
         }
         combined.truncate(entry.payload_bytes as usize);
-        entries_with_payloads.push((*entry, combined));
+        let decompressed = decompress_payload(entry.codec()?, &combined)?;
+        entries_with_payloads.push((*entry, decompressed));
     }
 
     let slice =
@@ -467,16 +475,28 @@ pub fn parse_vcf_dataset_dto(vcf_bytes: &[u8], assembly_hint: &str) -> Result<Wa
         ));
     }
 
-    let trimmed = match vcf_bytes.iter().rposition(|&b| b != 0) {
-        Some(last) => &vcf_bytes[..=last],
-        None => {
+    let uncompressed_cow: Cow<'_, [u8]> = if is_gzip_magic(vcf_bytes) {
+        let decompressed = decompress_gzip_bounded(vcf_bytes, MAX_VCF_DECOMPRESSED_BYTES)
+            .map_err(|e| PlasmidCoreError::VcfParse(format!("Invalid .vcf.gz stream: {e}")))?;
+        if decompressed.is_empty() {
             return Err(PlasmidCoreError::VcfParse(
-                "VCF file buffer contains only null bytes".to_string(),
+                "Decompressed .vcf.gz stream is empty".to_string(),
             ));
         }
+        Cow::Owned(decompressed)
+    } else {
+        let trimmed = match vcf_bytes.iter().rposition(|&b| b != 0) {
+            Some(last) => &vcf_bytes[..=last],
+            None => {
+                return Err(PlasmidCoreError::VcfParse(
+                    "VCF file buffer contains only null bytes".to_string(),
+                ));
+            }
+        };
+        Cow::Borrowed(trimmed)
     };
 
-    let text = std::str::from_utf8(trimmed)
+    let text = std::str::from_utf8(&uncompressed_cow)
         .map_err(|_| PlasmidCoreError::VcfParse("Invalid UTF-8 in VCF file".to_string()))?;
 
     let has_vcf_header = text.lines().any(|l| {
@@ -484,7 +504,7 @@ pub fn parse_vcf_dataset_dto(vcf_bytes: &[u8], assembly_hint: &str) -> Result<Wa
         t.starts_with("##fileformat=VCF") || t.starts_with("#CHROM\t") || t.starts_with("# rsid\t")
     });
 
-    let mut variants = VcfDecoder::decode_slice(trimmed)?;
+    let mut variants = VcfDecoder::decode_slice(&uncompressed_cow)?;
     if !has_vcf_header && variants.is_empty() {
         return Err(PlasmidCoreError::VcfParse(
             "Input contains no valid VCF header or variant records".to_string(),
@@ -868,6 +888,108 @@ impl PlasmidWasmEngine {
             Some(GenomeBuild::GRCh38) => Ok("GRCh38".to_string()),
             None => Ok("Unknown".to_string()),
         }
+    }
+
+    /// Verifies locus coordinate & allele consistency against authoritative VCF/FASTA data without synthetic strings.
+    #[wasm_bindgen]
+    #[allow(clippy::too_many_arguments)]
+    pub fn verify_locus_consistency(
+        rsid: &str,
+        chrom: &str,
+        queried_pos: f64,
+        asserted_ref: &str,
+        authoritative_pos: f64,
+        authoritative_ref: &str,
+        reference_slice: Option<String>,
+        slice_start_pos: f64,
+        target_build: &str,
+    ) -> std::result::Result<bool, JsValue> {
+        let build = if target_build.contains("37") || target_build.contains("19") {
+            GenomeBuild::GRCh37
+        } else {
+            GenomeBuild::GRCh38
+        };
+        CoordinateGuard::verify_locus_consistency(
+            rsid,
+            chrom,
+            queried_pos as u64,
+            asserted_ref,
+            authoritative_pos as u64,
+            authoritative_ref,
+            reference_slice.as_deref(),
+            slice_start_pos as u64,
+            build,
+        )
+        .map(|_| true)
+        .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Plans minimal hierarchical Leaf Directory HTTP Range requests for personal DNA ↔ ClinVar intersection.
+    #[wasm_bindgen]
+    pub fn plan_intersection_leaves(
+        root_dir_bytes: &[u8],
+        personal_variants_json: &str,
+        personal_build: &str,
+        clinvar_build: &str,
+    ) -> std::result::Result<JsValue, JsValue> {
+        let personal: Vec<VcfVariantRecord> = serde_json::from_str(personal_variants_json)
+            .map_err(|e| JsValue::from_str(&format!("Personal variants JSON error: {e}")))?;
+        let plan =
+            plan_intersection_leaves_dto(root_dir_bytes, &personal, personal_build, clinvar_build)
+                .map_err(|e| JsValue::from_str(&format!("Intersection leaf plan error: {e}")))?;
+        to_js_json(&plan)
+    }
+
+    /// Plans minimal 16KB Zstd chunk HTTP Range requests for personal DNA ↔ ClinVar intersection.
+    #[wasm_bindgen]
+    pub fn plan_intersection_chunks(
+        directory_bytes: &[u8],
+        personal_variants_json: &str,
+        personal_build: &str,
+        clinvar_build: &str,
+        payload_offset: f64,
+        chunk_size: u32,
+    ) -> std::result::Result<JsValue, JsValue> {
+        let personal: Vec<VcfVariantRecord> = serde_json::from_str(personal_variants_json)
+            .map_err(|e| JsValue::from_str(&format!("Personal variants JSON error: {e}")))?;
+        let plan = plan_intersection_chunks_dto(
+            directory_bytes,
+            &personal,
+            personal_build,
+            clinvar_build,
+            payload_offset as u64,
+            chunk_size,
+        )
+        .map_err(|e| JsValue::from_str(&format!("Intersection chunk plan error: {e}")))?;
+        to_js_json(&plan)
+    }
+
+    /// Intersects local OPFS personal variants against sliced ClinVar `.plasmid` Zstd chunks in WebAssembly.
+    #[wasm_bindgen]
+    pub fn intersect_personal_with_clinvar(
+        personal_variants_json: &str,
+        personal_build: &str,
+        entries_json: &str,
+        chunks_concat: &[u8],
+        chunk_indices: &[u32],
+        chunk_size: u32,
+        clinvar_build: &str,
+    ) -> std::result::Result<JsValue, JsValue> {
+        let personal: Vec<VcfVariantRecord> = serde_json::from_str(personal_variants_json)
+            .map_err(|e| JsValue::from_str(&format!("Personal variants JSON error: {e}")))?;
+        let entries: Vec<PlasmidIndexEntry> = serde_json::from_str(entries_json)
+            .map_err(|e| JsValue::from_str(&format!("Entries JSON error: {e}")))?;
+        let res = intersect_personal_with_clinvar_dto(
+            &personal,
+            personal_build,
+            &entries,
+            chunks_concat,
+            chunk_indices,
+            chunk_size,
+            clinvar_build,
+        )
+        .map_err(|e| JsValue::from_str(&format!("ClinVar intersection error: {e}")))?;
+        to_js_json(&res)
     }
 }
 

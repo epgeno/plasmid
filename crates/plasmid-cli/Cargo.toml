@@ -14,6 +14,7 @@ plasmid-core = { path = "../plasmid-core" }
 plasmid-format = { path = "../plasmid-format" }
 plasmid-swarm = { path = "../plasmid-swarm" }
 clap = { version = "4.5", features = ["derive"] }
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"

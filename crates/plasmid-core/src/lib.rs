@@ -2,6 +2,7 @@ pub mod chrom;
 pub mod decoder;
 pub mod error;
 pub mod governance;
+pub mod intersection;
 pub mod liftover;
 pub mod pyramid;
 pub mod slicing;
@@ -17,6 +18,10 @@ pub use error::{PlasmidCoreError, Result};
 pub use governance::{
     DataGovernanceGuard, GNOMAD_MANDATORY_ATTRIBUTION, LicenseType, MANDATORY_MEDICAL_DISCLAIMER,
     SubmitterStarRating,
+};
+pub use intersection::{
+    ClinVarMatchedVariant, WasmIntersectionResult, intersect_personal_with_clinvar_dto,
+    plan_intersection_chunks_dto, plan_intersection_leaves_dto,
 };
 pub use liftover::{
     AnchorSnp, CURATED_ANCHOR_SNPS, CoordinateGuard, GenomeBuild, LiftoverEngine, LiftoverInterval,

@@ -16,9 +16,11 @@ import {
   Upload,
   HardDrive,
   Trash2,
+  Stethoscope,
 } from 'lucide-react'
 import { SupportedLanguage, TRANSLATIONS } from './i18n'
 import { GenomeNavigator } from './components/GenomeNavigator'
+import { ClinVarIntersectionPanel } from './components/ClinVarIntersectionPanel'
 import {
   plasmidContainerClient,
   DEFAULT_OPFS_FILENAME,
@@ -35,21 +37,23 @@ import {
 } from './services/opfs'
 import type {
   CatalogVariantItem,
+  ClinVarIntersectionReport,
   DataSourceMode,
   LiftoverResult,
   WasmMerkleVerification,
 } from './types/plasmid'
 
-function pickDifferentBase(base: string): string {
-  const first = (base[0] || 'A').toUpperCase()
-  return first === 'A' ? 'C' : 'A'
-}
-
 export default function App() {
   const initialVaultPath = opfs.getActiveVaultPath()
   const [lang, setLang] = useState<SupportedLanguage>('ko')
   const [activeTab, setActiveTab] = useState<
-    'navigator' | 'stream' | 'liftover' | 'wiki' | 'swarm' | 'governance'
+    | 'navigator'
+    | 'intersection'
+    | 'stream'
+    | 'liftover'
+    | 'wiki'
+    | 'swarm'
+    | 'governance'
   >('navigator')
 
   const [sourceMode, setSourceMode] = useState<DataSourceMode>(
@@ -81,6 +85,16 @@ export default function App() {
   const [liftoverResult, setLiftoverResult] = useState<LiftoverResult | null>(null)
   const [liftoverError, setLiftoverError] = useState<string | null>(null)
   const [guardError, setGuardError] = useState<string | null>(null)
+
+  const [intersectionReport, setIntersectionReport] =
+    useState<ClinVarIntersectionReport | null>(null)
+  const [intersectionLoading, setIntersectionLoading] = useState<boolean>(false)
+  const [intersectionError, setIntersectionError] = useState<string | null>(null)
+  const [navigatorJumpTarget, setNavigatorJumpTarget] = useState<{
+    chrom: string
+    pos: number
+    seq: number
+  } | null>(null)
 
   const t = TRANSLATIONS[lang]
 
@@ -317,22 +331,20 @@ export default function App() {
       }
 
       const refAllele = current.variant.ref
-      const altNeighbor = pickDifferentBase(refAllele).repeat(refAllele.length)
-      const refWindow = `${refAllele}${altNeighbor}`
       const testPos = simulateAdversarialDrift
         ? current.variant.pos + 1
         : current.variant.pos
 
       try {
-        await decoderClient.verifyRefFingerprint(
-          current.variant.id,
-          current.variant.chrom,
-          testPos,
-          refAllele,
-          refWindow,
-          current.variant.pos,
-          containerAsm
-        )
+        await decoderClient.verifyLocusConsistency({
+          rsid: current.variant.id,
+          chrom: current.variant.chrom,
+          queriedPos: testPos,
+          assertedRef: refAllele,
+          authoritativePos: current.variant.pos,
+          authoritativeRef: refAllele,
+          targetBuild: containerAsm,
+        })
         if (!cancelled) setGuardError(null)
       } catch (err: unknown) {
         if (!cancelled) {
@@ -346,6 +358,42 @@ export default function App() {
       cancelled = true
     }
   }, [current, session?.containerAssembly, simulateAdversarialDrift])
+
+  // Automatically intersect active OPFS Vault genome against public ClinVar Zstd pack in WASM
+  useEffect(() => {
+    if (sourceMode !== 'vault' || !activeOpfsFilename) {
+      setIntersectionReport(null)
+      setIntersectionLoading(false)
+      setIntersectionError(null)
+      return
+    }
+
+    const abortController = new AbortController()
+    setIntersectionLoading(true)
+    setIntersectionError(null)
+
+    plasmidContainerClient
+      .intersectVaultWithPublicClinvar({
+        vaultOpfsFilename: activeOpfsFilename,
+        signal: abortController.signal,
+      })
+      .then((report) => {
+        if (!abortController.signal.aborted) {
+          setIntersectionReport(report)
+          setIntersectionLoading(false)
+        }
+      })
+      .catch((err: unknown) => {
+        if (!abortController.signal.aborted) {
+          setIntersectionError(err instanceof Error ? err.message : String(err))
+          setIntersectionLoading(false)
+        }
+      })
+
+    return () => {
+      abortController.abort()
+    }
+  }, [sourceMode, activeOpfsFilename])
 
   const handleVerifyMerkle = async () => {
     setVerifying(true)
@@ -530,6 +578,7 @@ export default function App() {
               {(
                 [
                   { id: 'navigator', icon: Compass, label: t.header.tabs.navigator },
+                  { id: 'intersection', icon: Stethoscope, label: t.header.tabs.intersection },
                   { id: 'stream', icon: Layers, label: t.header.tabs.viewer },
                   { id: 'liftover', icon: ArrowRightLeft, label: t.header.tabs.liftover },
                   { id: 'wiki', icon: FileText, label: t.header.tabs.wiki },
@@ -707,7 +756,7 @@ export default function App() {
               ref={fileInputRef}
               data-testid="vault-file-input"
               type="file"
-              accept=".vcf,.plasmid,.txt"
+              accept=".vcf,.vcf.gz,.vcf.bgz,.plasmid,.txt,.txt.gz,.tsv,.tsv.gz"
               onChange={(e) => {
                 const chosen = e.target.files?.[0]
                 if (chosen) {
@@ -949,6 +998,72 @@ export default function App() {
               )
             })}
           </div>
+
+          {/* Live ClinVar Intersection Summary Strip inside Vault Card */}
+          {sourceMode === 'vault' && (intersectionLoading || intersectionReport) && (
+            <div
+              data-testid="vault-clinvar-summary"
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '10px',
+                marginTop: '12px',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                backgroundColor: '#ffffff',
+                border: '1px solid #86efac',
+                minWidth: 0,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: '#14532d',
+                  minWidth: 0,
+                  flex: '1 1 240px',
+                }}
+              >
+                <Stethoscope size={15} color="#15803d" style={{ flexShrink: 0 }} />
+                <span style={{ wordBreak: 'break-word' }}>
+                  {intersectionLoading
+                    ? t.vault.intersectRunning
+                    : intersectionReport
+                      ? t.vault.intersectReadyBanner(
+                          intersectionReport.matched_count,
+                          intersectionReport.clinvar_variants_scanned
+                        )
+                      : ''}
+                </span>
+              </div>
+
+              {intersectionReport && activeTab !== 'intersection' && (
+                <button
+                  type="button"
+                  data-testid="open-clinvar-report-btn"
+                  onClick={() => setActiveTab('intersection')}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid #16a34a',
+                    backgroundColor: '#16a34a',
+                    color: '#ffffff',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {t.vault.openReportBtn}
+                </button>
+              )}
+            </div>
+          )}
         </section>
 
         {/* Active Container Variant Bar */}
@@ -1081,8 +1196,29 @@ export default function App() {
               catalogItems={catalogItems}
               selectedCatalogKey={selectedKey}
               onSelectCatalogKey={setSelectedKey}
+              externalJumpTarget={navigatorJumpTarget}
             />
           </div>
+        )}
+
+        {/* TAB 0B: Personal DNA <-> Public ClinVar Zstd Intersection Report */}
+        {activeTab === 'intersection' && (
+          <ClinVarIntersectionPanel
+            lang={lang}
+            hasVaultFile={sourceMode === 'vault'}
+            loading={intersectionLoading}
+            error={intersectionError}
+            report={intersectionReport}
+            onTriggerUpload={() => fileInputRef.current?.click()}
+            onInspectInNavigator={(chrom, pos) => {
+              setActiveTab('navigator')
+              setNavigatorJumpTarget((prev) => ({
+                chrom,
+                pos,
+                seq: (prev?.seq ?? 0) + 1,
+              }))
+            }}
+          />
         )}
 
         {/* TAB 1: Data Viewer (Real .plasmid Byte-Range & Merkle Verification) */}

@@ -1,4 +1,5 @@
 pub mod builder;
+pub mod codec;
 pub mod error;
 pub mod header;
 pub mod index;
@@ -6,6 +7,11 @@ pub mod merkle;
 pub mod reader;
 
 pub use builder::PlasmidBuilder;
+pub use codec::{
+    CODEC_MASK, CompressionCodec, MAX_DECOMPRESSED_ENTRY_BYTES, compress_payload, compress_zstd,
+    decompress_gzip_bounded, decompress_payload, decompress_payload_bounded,
+    decompress_zstd_bounded, is_gzip_magic, is_zstd_magic,
+};
 pub use error::{PlasmidFormatError, Result};
 pub use header::{
     CURRENT_VERSION, DEFAULT_CHUNK_SIZE, FLAG_HIERARCHICAL_INDEX, HEADER_SIZE, PLASMID_MAGIC,
@@ -237,5 +243,60 @@ mod tests {
             target_leaf.leaf_length,
             (1.0 - egress_ratio) * 100.0
         );
+    }
+
+    #[test]
+    fn test_zstd_and_bgzf_codec_roundtrip_and_merkle() {
+        // Generate ~40 KB of realistic repetitive VCF lines -> Raw requires 3 x 16KB chunks, Zstd fits in 1 x 16KB chunk!
+        let mut raw_vcf = String::new();
+        for i in 0..450u64 {
+            let pos = 43_044_000 + i * 25;
+            raw_vcf.push_str(&format!(
+                "chr17\t{pos}\trs{}\tC\tT\t.\tPASS\tALLELEID={};CLNREVSTAT=reviewed_by_expert_panel;CLNSIG=Pathogenic;GENEINFO=BRCA1:672\n",
+                80357000 + i,
+                10000 + i
+            ));
+        }
+        assert!(raw_vcf.len() > 40_000);
+
+        for codec in [
+            CompressionCodec::Raw,
+            CompressionCodec::Bgzf,
+            CompressionCodec::Zstd,
+        ] {
+            let mut builder = PlasmidBuilder::new("GRCh38");
+            builder.set_compression(codec);
+            builder.add_item(
+                17,
+                EntryType::VcfVariant,
+                43_044_000,
+                43_044_000 + 450 * 25,
+                raw_vcf.as_bytes().to_vec(),
+            );
+
+            let mut container = Vec::new();
+            let header = builder.build_hierarchical(&mut container, 16).unwrap();
+
+            if codec == CompressionCodec::Zstd {
+                assert_eq!(
+                    header.total_chunks, 1,
+                    "40KB VCF block compressed with Zstd must fit inside 1 x 16KB Merkle chunk"
+                );
+            } else if codec == CompressionCodec::Raw {
+                assert!(header.total_chunks >= 3);
+            }
+
+            let mut reader = PlasmidReader::new(Cursor::new(container)).unwrap();
+            assert!(reader.verify_integrity().unwrap());
+
+            let entries = reader
+                .query_range(17, 43_045_000, 43_046_000, None)
+                .unwrap();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].codec().unwrap(), codec);
+
+            let decompressed = reader.read_entry_payload(&entries[0]).unwrap();
+            assert_eq!(decompressed, raw_vcf.as_bytes());
+        }
     }
 }

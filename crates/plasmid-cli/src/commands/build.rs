@@ -1,17 +1,22 @@
 use clap::Args;
+use flate2::read::MultiGzDecoder;
 use plasmid_core::chrom::{chrom_to_id, id_to_chrom};
-use plasmid_format::{DEFAULT_CHUNK_SIZE, EntryType, PlasmidBuilder};
+use plasmid_format::{
+    CompressionCodec, DEFAULT_CHUNK_SIZE, EntryType, PlasmidBuilder, is_gzip_magic,
+};
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, BufWriter};
+use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+
+const COMPRESSED_VCF_BATCH_BYTES: usize = 65_536;
 
 #[derive(Args, Debug)]
 pub struct BuildArgs {
-    /// Path to input VCF file
+    /// Path to input VCF or VCF.GZ file
     #[arg(long)]
     pub vcf: Option<PathBuf>,
 
-    /// Path to input FASTA reference file
+    /// Path to input FASTA or FASTA.GZ reference file
     #[arg(long)]
     pub fasta: Option<PathBuf>,
 
@@ -38,6 +43,10 @@ pub struct BuildArgs {
     /// Custom metadata JSON string or path to JSON file
     #[arg(long)]
     pub metadata: Option<String>,
+
+    /// Payload compression codec per RFC-0001 (`raw`, `bgzf`, or `zstd`)
+    #[arg(long, default_value = "raw")]
+    pub compress: String,
 }
 
 struct PendingVcfRecord {
@@ -47,12 +56,38 @@ struct PendingVcfRecord {
     line_bytes: Vec<u8>,
 }
 
+/// Opens a plain-text or `.gz` / BGZF genomic file as a streaming `BufRead`.
+pub fn open_maybe_gzip_reader(path: &Path) -> std::io::Result<Box<dyn BufRead>> {
+    let mut file = File::open(path)?;
+    let mut magic = [0u8; 2];
+    let n = file.read(&mut magic)?;
+    file.seek(SeekFrom::Start(0))?;
+
+    let ext_is_gz = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("gz") || e.eq_ignore_ascii_case("bgz"));
+
+    if (n == 2 && is_gzip_magic(&magic)) || ext_is_gz {
+        Ok(Box::new(BufReader::with_capacity(
+            128 * 1024,
+            MultiGzDecoder::new(file),
+        )))
+    } else {
+        Ok(Box::new(BufReader::with_capacity(128 * 1024, file)))
+    }
+}
+
 pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
+    let codec = args.compress.parse::<CompressionCodec>()?;
+
     println!("📦 Compiling .plasmid genomic archive...");
     println!("   Reference Build: {}", args.reference);
+    println!("   Compression:     {}", codec);
     println!("   Output File:     {}", args.output.display());
 
     let mut builder = PlasmidBuilder::new(&args.reference);
+    builder.set_compression(codec);
     let mut pyramid = plasmid_core::pyramid::PyramidIndex::new(&args.reference);
 
     // 1. Process Metadata
@@ -65,9 +100,10 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         serde_json::json!({
             "generator": "plasmid-cli v0.1.0",
-            "created_at": "2026-09-12T00:00:00Z",
+            "created_at": "2026-11-15T00:00:00Z",
             "license": "Public Domain / CC0",
             "reference_build": args.reference,
+            "compression": codec.as_str(),
         })
         .to_string()
     };
@@ -78,11 +114,10 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
     let mut fasta_count = 0usize;
     let mut annotation_count = 0usize;
 
-    // 2. Parse VCF and pack records into 16KB chromosome-scoped batches with newline delimiters
+    // 2. Parse VCF / VCF.GZ and pack records into chromosome-scoped batches
     if let Some(vcf_path) = &args.vcf {
         println!("   Loading VCF from: {}", vcf_path.display());
-        let file = File::open(vcf_path)?;
-        let reader = BufReader::new(file);
+        let reader = open_maybe_gzip_reader(vcf_path)?;
         let mut pending_vcf = Vec::new();
 
         for line_res in reader.lines() {
@@ -132,10 +167,12 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
             vcf_count += 1;
         }
 
-        // Sort stably by (chrom_id, pos) so packed chunk coordinate bounds remain tight
         pending_vcf.sort_by_key(|r| (r.chrom_id, r.pos));
 
-        let chunk_budget = DEFAULT_CHUNK_SIZE as usize;
+        let chunk_budget = match codec {
+            CompressionCodec::Raw => DEFAULT_CHUNK_SIZE as usize,
+            CompressionCodec::Bgzf | CompressionCodec::Zstd => COMPRESSED_VCF_BATCH_BYTES,
+        };
         let mut batch_chrom: Option<u16> = None;
         let mut batch_start = 0u64;
         let mut batch_end = 0u64;
@@ -188,16 +225,15 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         println!(
-            "   ↳ Ingested {} variant records ({} packed blocks)",
-            vcf_count, vcf_block_count
+            "   ↳ Ingested {} variant records ({} packed blocks, codec={})",
+            vcf_count, vcf_block_count, codec
         );
     }
 
-    // 3. Parse FASTA
+    // 3. Parse FASTA / FASTA.GZ
     if let Some(fasta_path) = &args.fasta {
         println!("   Loading FASTA from: {}", fasta_path.display());
-        let file = File::open(fasta_path)?;
-        let reader = BufReader::new(file);
+        let reader = open_maybe_gzip_reader(fasta_path)?;
 
         let mut current_chrom: Option<u16> = None;
         let mut current_seq = String::new();
@@ -211,7 +247,6 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
             }
 
             if let Some(stripped) = trimmed.strip_prefix('>') {
-                // Flush previous contig segment if any
                 if let (Some(cid), false) = (current_chrom, current_seq.is_empty()) {
                     let end_pos = current_pos + current_seq.len() as u64 - 1;
                     let payload = format!(">{}\n{}\n", id_to_chrom(cid), current_seq);
@@ -232,10 +267,12 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
             } else if let Some(cid) = current_chrom {
                 current_seq.push_str(trimmed);
                 let chrom_label = id_to_chrom(cid);
-                // Reserve exact header + newline overhead (">{chrom}\n" + "\n") so each payload fits inside one 16KB Merkle leaf
-                let max_seq_len = (DEFAULT_CHUNK_SIZE as usize)
-                    .saturating_sub(chrom_label.len() + 3)
-                    .max(1);
+                let max_seq_len = match codec {
+                    CompressionCodec::Raw => (DEFAULT_CHUNK_SIZE as usize)
+                        .saturating_sub(chrom_label.len() + 3)
+                        .max(1),
+                    CompressionCodec::Bgzf | CompressionCodec::Zstd => 49_152,
+                };
 
                 while current_seq.len() >= max_seq_len {
                     let chunk_seq: String = current_seq.drain(..max_seq_len).collect();
@@ -272,8 +309,10 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
     // 4. Parse Annotations
     if let Some(ann_path) = &args.annotation {
         println!("   Loading Annotations from: {}", ann_path.display());
-        let content = fs::read_to_string(ann_path)?;
-        // Parse markdown sections delimited by `##`
+        let mut reader = open_maybe_gzip_reader(ann_path)?;
+        let mut content = String::new();
+        reader.read_to_string(&mut content)?;
+
         for section in content.split("\n##") {
             let trimmed = section.trim();
             if trimmed.is_empty() {
@@ -301,7 +340,6 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
                     if !note.ends_with('\n') {
                         note.push('\n');
                     }
-                    // RFC-0003 governance validation on annotation payload
                     plasmid_core::governance::DataGovernanceGuard::validate_annotation_payload(
                         &note,
                     )?;
@@ -318,16 +356,18 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("⚠️  Warning: No input data provided. Building container with empty payload.");
     }
 
-    // Embed multi-scale pyramid index into metadata
     let mut meta_val: serde_json::Value =
         serde_json::from_str(&meta_str).unwrap_or(serde_json::json!({}));
+    meta_val["compression"] = serde_json::Value::String(codec.as_str().to_string());
+    meta_val["variant_count"] = serde_json::Value::from(vcf_count);
     if let Ok(pyr_val) = serde_json::to_value(&pyramid) {
         meta_val["pyramid"] = pyr_val;
     }
     builder.set_metadata(&meta_val.to_string());
 
-    // Create parent directories if missing
-    if let Some(parent) = args.output.parent() {
+    if let Some(parent) = args.output.parent()
+        && !parent.as_os_str().is_empty()
+    {
         fs::create_dir_all(parent)?;
     }
 
@@ -356,6 +396,7 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
         file_meta.len() as f64 / 1024.0
     );
     println!("   Total Chunks:    {} (16 KB each)", header.total_chunks);
+    println!("   Compression:     {}", codec);
     println!("   Root Merkle:     {}", root_hex);
     println!(
         "   Index Offset:    {} ({} bytes)",

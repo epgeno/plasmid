@@ -38,6 +38,10 @@ export function hasPlasmidMagic(bytes: Uint8Array): boolean {
   return true;
 }
 
+export function hasGzipMagic(bytes: Uint8Array): boolean {
+  return bytes.byteLength >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+}
+
 export function sanitizeVaultFilename(rawName: string): string {
   const base = rawName.split(/[\\/]/).pop()?.normalize('NFC').trim() || 'genome.vcf';
   const cleaned = base
@@ -72,11 +76,20 @@ export function detectVaultFileKind(filename: string, bytes?: Uint8Array): Vault
   if (lower.endsWith('.plasmid')) {
     return 'plasmid';
   }
-  if (lower.endsWith('.vcf') || lower.endsWith('.txt')) {
+  if (
+    lower.endsWith('.vcf') ||
+    lower.endsWith('.vcf.gz') ||
+    lower.endsWith('.vcf.bgz') ||
+    lower.endsWith('.txt') ||
+    lower.endsWith('.txt.gz') ||
+    lower.endsWith('.tsv') ||
+    lower.endsWith('.tsv.gz') ||
+    (bytes && hasGzipMagic(bytes) && lower.endsWith('.gz'))
+  ) {
     return 'vcf';
   }
   throw new Error(
-    `Unsupported file extension for "${filename}". Supported formats: .vcf, .plasmid, .txt`
+    `Unsupported file extension for "${filename}". Supported formats: .vcf, .vcf.gz, .plasmid, .txt, .txt.gz`
   );
 }
 

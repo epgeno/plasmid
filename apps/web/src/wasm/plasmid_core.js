@@ -151,6 +151,36 @@ export class PlasmidWasmEngine {
         }
     }
     /**
+     * Intersects local OPFS personal variants against sliced ClinVar `.plasmid` Zstd chunks in WebAssembly.
+     * @param {string} personal_variants_json
+     * @param {string} personal_build
+     * @param {string} entries_json
+     * @param {Uint8Array} chunks_concat
+     * @param {Uint32Array} chunk_indices
+     * @param {number} chunk_size
+     * @param {string} clinvar_build
+     * @returns {any}
+     */
+    static intersect_personal_with_clinvar(personal_variants_json, personal_build, entries_json, chunks_concat, chunk_indices, chunk_size, clinvar_build) {
+        const ptr0 = passStringToWasm0(personal_variants_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(personal_build, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(entries_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(chunks_concat, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passArray32ToWasm0(chunk_indices, wasm.__wbindgen_malloc);
+        const len4 = WASM_VECTOR_LEN;
+        const ptr5 = passStringToWasm0(clinvar_build, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len5 = WASM_VECTOR_LEN;
+        const ret = wasm.plasmidwasmengine_intersect_personal_with_clinvar(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, chunk_size, ptr5, len5);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * Realtime Liftover of GRCh37 (hg19) coordinate to GRCh38 (hg38) in WebAssembly.
      * @param {string} chrom
      * @param {number} pos
@@ -260,6 +290,54 @@ export class PlasmidWasmEngine {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * Plans minimal 16KB Zstd chunk HTTP Range requests for personal DNA ↔ ClinVar intersection.
+     * @param {Uint8Array} directory_bytes
+     * @param {string} personal_variants_json
+     * @param {string} personal_build
+     * @param {string} clinvar_build
+     * @param {number} payload_offset
+     * @param {number} chunk_size
+     * @returns {any}
+     */
+    static plan_intersection_chunks(directory_bytes, personal_variants_json, personal_build, clinvar_build, payload_offset, chunk_size) {
+        const ptr0 = passArray8ToWasm0(directory_bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(personal_variants_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(personal_build, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(clinvar_build, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.plasmidwasmengine_plan_intersection_chunks(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, payload_offset, chunk_size);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * Plans minimal hierarchical Leaf Directory HTTP Range requests for personal DNA ↔ ClinVar intersection.
+     * @param {Uint8Array} root_dir_bytes
+     * @param {string} personal_variants_json
+     * @param {string} personal_build
+     * @param {string} clinvar_build
+     * @returns {any}
+     */
+    static plan_intersection_leaves(root_dir_bytes, personal_variants_json, personal_build, clinvar_build) {
+        const ptr0 = passArray8ToWasm0(root_dir_bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(personal_variants_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(personal_build, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(clinvar_build, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.plasmidwasmengine_plan_intersection_leaves(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * Plans minimal HTTP Range Requests from a downloaded .plasmid flat or leaf directory index.
      * @param {Uint8Array} directory_bytes
      * @param {string} chrom
@@ -312,6 +390,38 @@ export class PlasmidWasmEngine {
         const len1 = WASM_VECTOR_LEN;
         const ret = wasm.plasmidwasmengine_verify_chunk_hash(ptr0, len0, ptr1, len1);
         return ret !== 0;
+    }
+    /**
+     * Verifies locus coordinate & allele consistency against authoritative VCF/FASTA data without synthetic strings.
+     * @param {string} rsid
+     * @param {string} chrom
+     * @param {number} queried_pos
+     * @param {string} asserted_ref
+     * @param {number} authoritative_pos
+     * @param {string} authoritative_ref
+     * @param {string | null | undefined} reference_slice
+     * @param {number} slice_start_pos
+     * @param {string} target_build
+     * @returns {boolean}
+     */
+    static verify_locus_consistency(rsid, chrom, queried_pos, asserted_ref, authoritative_pos, authoritative_ref, reference_slice, slice_start_pos, target_build) {
+        const ptr0 = passStringToWasm0(rsid, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(chrom, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(asserted_ref, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passStringToWasm0(authoritative_ref, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len3 = WASM_VECTOR_LEN;
+        var ptr4 = isLikeNone(reference_slice) ? 0 : passStringToWasm0(reference_slice, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        var len4 = WASM_VECTOR_LEN;
+        const ptr5 = passStringToWasm0(target_build, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len5 = WASM_VECTOR_LEN;
+        const ret = wasm.plasmidwasmengine_verify_locus_consistency(ptr0, len0, ptr1, len1, queried_pos, ptr2, len2, authoritative_pos, ptr3, len3, ptr4, len4, slice_start_pos, ptr5, len5);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
     }
     /**
      * Recomputes full BEP 52 SHA-256 Merkle Tree over container payload chunks and verifies root hash.
@@ -465,6 +575,10 @@ function getUint8ArrayMemory0() {
         cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
     }
     return cachedUint8ArrayMemory0;
+}
+
+function isLikeNone(x) {
+    return x === undefined || x === null;
 }
 
 function passArray32ToWasm0(arg, malloc) {
