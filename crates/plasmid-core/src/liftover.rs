@@ -183,16 +183,18 @@ impl CoordinateGuard {
             return Ok(()); // Outside slice, cannot verify sequence locally
         }
         let offset = (pos - slice_start_pos) as usize;
-        if offset + ref_allele.len() <= reference_slice.len() {
-            let target_ref = &reference_slice[offset..offset + ref_allele.len()];
-            if !target_ref.eq_ignore_ascii_case(ref_allele) {
+        let ref_bytes = ref_allele.as_bytes();
+        let slice_bytes = reference_slice.as_bytes();
+        if offset + ref_bytes.len() <= slice_bytes.len() {
+            let target_bytes = &slice_bytes[offset..offset + ref_bytes.len()];
+            if !target_bytes.eq_ignore_ascii_case(ref_bytes) {
                 return Err(PlasmidCoreError::CoordinateDriftMismatch(Box::new(
                     CoordinateDriftDetails {
                         rsid: rsid.to_string(),
                         chrom: chrom.to_string(),
                         pos,
                         found: ref_allele.to_string(),
-                        expected: target_ref.to_string(),
+                        expected: String::from_utf8_lossy(target_bytes).into_owned(),
                         target_build: target_build.to_string(),
                     },
                 )));
@@ -449,5 +451,17 @@ mod tests {
             }
             other => panic!("Unexpected error: {other}"),
         }
+
+        // Multibyte UTF-8 strings must never panic on non-char-boundary offsets
+        let utf8_res = CoordinateGuard::verify_ref_fingerprint(
+            "rs_utf8",
+            "chr7",
+            101,
+            "유전자",
+            "유전자변이",
+            100,
+            GenomeBuild::GRCh38,
+        );
+        assert!(utf8_res.is_err());
     }
 }

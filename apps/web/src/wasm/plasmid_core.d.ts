@@ -50,9 +50,17 @@ export class PlasmidWasmEngine {
      */
     static parse_header(header_bytes: Uint8Array): any;
     /**
+     * Parses and cryptographically validates a local .plasmid container buffer stored in OPFS.
+     */
+    static parse_local_plasmid(container_bytes: Uint8Array): any;
+    /**
      * Parses all leaf directory pointers from a hierarchical Root Directory buffer.
      */
     static parse_root_directory(root_dir_bytes: Uint8Array): any;
+    /**
+     * Parses an arbitrary local .vcf/.txt byte buffer into a sorted variant table, chromosome coordinate index, and 1Mb PyramidIndex.
+     */
+    static parse_vcf_dataset(vcf_bytes: Uint8Array, assembly_hint: string): any;
     /**
      * Plans minimal HTTP Range Requests from a downloaded .plasmid flat or leaf directory index.
      */
@@ -91,7 +99,9 @@ export interface InitOutput {
     readonly plasmidwasmengine_liftover_hg38_to_hg19: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly plasmidwasmengine_parse_directory_entries: (a: number, b: number) => [number, number, number];
     readonly plasmidwasmengine_parse_header: (a: number, b: number) => [number, number, number];
+    readonly plasmidwasmengine_parse_local_plasmid: (a: number, b: number) => [number, number, number];
     readonly plasmidwasmengine_parse_root_directory: (a: number, b: number) => [number, number, number];
+    readonly plasmidwasmengine_parse_vcf_dataset: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly plasmidwasmengine_plan_range_slice: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
     readonly plasmidwasmengine_query_root_leaves: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly plasmidwasmengine_verify_chunk_hash: (a: number, b: number, c: number, d: number) => number;

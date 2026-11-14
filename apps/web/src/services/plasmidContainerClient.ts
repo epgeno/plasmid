@@ -1,12 +1,14 @@
 import { decoderClient } from './decoderClient.js';
-import { opfs } from './opfs.js';
+import { detectVaultFileKind, opfs, VAULT_DIR_NAME } from './opfs.js';
 import type {
   AnnotationRecord,
   ByteRange,
   CatalogVariantItem,
   ContainerMetadata,
+  DataSourceMode,
   GenomeAssembly,
   ParsedVariant,
+  ParsedVcfDataset,
   PlasmidIndexEntry,
   PyramidIndex,
   SlicingPlan,
@@ -21,12 +23,16 @@ import type {
 export const DEFAULT_DATASET_URL = '/api/data/demo.plasmid';
 export const DEFAULT_OPFS_FILENAME = 'demo.plasmid';
 const HEADER_SIZE = 128;
+const MAX_CATALOG_SELECTOR_ITEMS = 500;
 
 export type AuditLogType = 'opfs' | 'network' | 'worker';
 export type AuditLogger = (message: string, type: AuditLogType) => void;
+export type ContainerSourceKind = 'remote-plasmid' | 'opfs-plasmid' | 'local-vcf';
 
 export interface ContainerSession {
   key: string;
+  sourceMode: DataSourceMode;
+  sourceKind: ContainerSourceKind;
   airgapped: boolean;
   datasetUrl: string;
   opfsFilename: string;
@@ -38,20 +44,25 @@ export interface ContainerSession {
   flatEntries: WasmIndexEntryInfo[];
   metadata: ContainerMetadata;
   pyramid: PyramidIndex;
+  vcfDataset?: ParsedVcfDataset;
   leafCache: Map<string, Uint8Array>;
   chunkCache: Map<number, Uint8Array>;
 }
 
-export interface WindowQueryOptions {
-  chrom: string;
-  startPos: number;
-  endPos: number;
-  viewAssembly?: GenomeAssembly;
+export interface SessionLookupOptions {
+  sourceMode?: DataSourceMode;
   airgapped?: boolean;
   datasetUrl?: string;
   opfsFilename?: string;
   signal?: AbortSignal;
   onLog?: AuditLogger;
+}
+
+export interface WindowQueryOptions extends SessionLookupOptions {
+  chrom: string;
+  startPos: number;
+  endPos: number;
+  viewAssembly?: GenomeAssembly;
 }
 
 export interface WindowQueryResult {
@@ -95,14 +106,42 @@ function formatByteRangeHeader(ranges: ByteRange[]): string {
   return `bytes=${ranges.map((r) => `${r.start}-${r.end}`).join(',')}`;
 }
 
+function normalizeChromName(chrom: string): string {
+  const trimmed = chrom.trim();
+  const clean = trimmed.replace(/^chr/i, '').toUpperCase();
+  if (clean === 'MT') return 'chrM';
+  if (clean === 'X' || clean === 'Y' || clean === 'M') return `chr${clean}`;
+  const num = Number(clean);
+  if (Number.isInteger(num) && num >= 1 && num <= 22) {
+    return `chr${num}`;
+  }
+  return trimmed;
+}
+
 class PlasmidContainerClient {
   private sessions = new Map<string, ContainerSession>();
   private pendingSessions = new Map<string, Promise<ContainerSession>>();
   private assemblyPyramidCache = new Map<GenomeAssembly, PyramidIndex>();
+  private cacheGeneration = 0;
 
   public clearCache(): void {
+    this.cacheGeneration += 1;
     this.sessions.clear();
     this.pendingSessions.clear();
+  }
+
+  public evictFile(opfsFilename: string): void {
+    this.cacheGeneration += 1;
+    for (const [key, session] of this.sessions.entries()) {
+      if (session.opfsFilename === opfsFilename || key.endsWith(`:${opfsFilename}`)) {
+        this.sessions.delete(key);
+      }
+    }
+    for (const key of this.pendingSessions.keys()) {
+      if (key.endsWith(`:${opfsFilename}`)) {
+        this.pendingSessions.delete(key);
+      }
+    }
   }
 
   public async getAssemblyPyramid(assembly: GenomeAssembly): Promise<PyramidIndex> {
@@ -124,6 +163,7 @@ class PlasmidContainerClient {
     onLog?: AuditLogger;
   }): Promise<{ bytes: Uint8Array; totalSize: number | null; rangeHeader: string }> {
     const { datasetUrl, opfsFilename, start, end, airgapped, signal, label, onLog } = params;
+    signal?.throwIfAborted();
     const rangeHeader = `bytes=${start}-${end}`;
     const expectedLen = end - start + 1;
 
@@ -131,11 +171,12 @@ class PlasmidContainerClient {
       const exists = await opfs.hasFile(opfsFilename);
       if (!exists) {
         throw new Error(
-          `OPFS Airgap is active, but "${opfsFilename}" is not cached locally. Cache the container to OPFS first or switch to Edge Streaming.`
+          `OPFS Airgap is active, but "${opfsFilename}" is not cached locally. Cache or upload a file to OPFS first.`
         );
       }
       const info = await opfs.getFileInfo(opfsFilename);
       const buf = await opfs.readRange(opfsFilename, start, end);
+      signal?.throwIfAborted();
       const bytes = new Uint8Array(buf);
       onLog?.(
         `OPFS [${label}] ${rangeHeader} (${bytes.byteLength.toLocaleString()} B)`,
@@ -171,7 +212,6 @@ class PlasmidContainerClient {
       return { bytes: rawBytes, totalSize, rangeHeader };
     }
 
-    // Server returned 200 OK full representation (e.g. plain static host without 206 support)
     const sliced = rawBytes.slice(start, Math.min(rawBytes.byteLength, start + expectedLen));
     onLog?.(
       `HTTP 200 [${label}] sliced ${rangeHeader} (${sliced.byteLength.toLocaleString()} B of ${rawBytes.byteLength.toLocaleString()} B)`,
@@ -184,17 +224,16 @@ class PlasmidContainerClient {
     };
   }
 
-  public async getSession(options?: {
-    airgapped?: boolean;
-    datasetUrl?: string;
-    opfsFilename?: string;
-    signal?: AbortSignal;
-    onLog?: AuditLogger;
-  }): Promise<ContainerSession> {
-    const airgapped = options?.airgapped ?? false;
-    const datasetUrl = options?.datasetUrl ?? DEFAULT_DATASET_URL;
+  public async getSession(options?: SessionLookupOptions): Promise<ContainerSession> {
     const opfsFilename = options?.opfsFilename ?? DEFAULT_OPFS_FILENAME;
-    const key = `${airgapped ? 'opfs' : 'edge'}:${airgapped ? opfsFilename : datasetUrl}`;
+    const isVaultPath =
+      options?.sourceMode === 'vault' || opfsFilename.startsWith(`${VAULT_DIR_NAME}/`);
+    const sourceMode: DataSourceMode = isVaultPath ? 'vault' : 'public';
+    const airgapped = isVaultPath ? true : (options?.airgapped ?? false);
+    const datasetUrl = options?.datasetUrl ?? DEFAULT_DATASET_URL;
+    const key = isVaultPath
+      ? `vault:${opfsFilename}`
+      : `${airgapped ? 'opfs' : 'edge'}:${airgapped ? opfsFilename : datasetUrl}`;
 
     const existing = this.sessions.get(key);
     if (existing) {
@@ -206,8 +245,154 @@ class PlasmidContainerClient {
       return inflight;
     }
 
+    const startGen = this.cacheGeneration;
     const promise = (async (): Promise<ContainerSession> => {
-      // 1. Exact 128-byte .plasmid binary header
+      if (isVaultPath) {
+        const exists = await opfs.hasFile(opfsFilename);
+        if (!exists) {
+          throw new Error(`Vault file "${opfsFilename}" was not found in browser OPFS.`);
+        }
+
+        const rawBuf = await opfs.readFile(opfsFilename);
+        const rawBytes = new Uint8Array(rawBuf);
+        const vaultKind = detectVaultFileKind(opfsFilename, rawBytes);
+
+        if (vaultKind === 'vcf') {
+          options?.onLog?.(
+            `OPFS [Vault VCF] ${opfsFilename} (${rawBytes.byteLength.toLocaleString()} B)`,
+            'opfs'
+          );
+
+          const vcfDataset = await decoderClient.parseVcfDataset(rawBytes, 'GRCh38');
+          const containerAssembly = detectAssemblyFromBuildString(vcfDataset.reference_build);
+
+          options?.onLog?.(
+            `WASM parsed local VCF (${vcfDataset.reference_build}, ${vcfDataset.variants.length} variants across ${vcfDataset.chrom_index.length} chromosomes, sha256=${vcfDataset.sha256_hex.slice(0, 12)}…)`,
+            'worker'
+          );
+
+          const syntheticHeader: WasmHeaderInfo = {
+            version: 1,
+            flags: 0,
+            is_hierarchical: false,
+            reference_build: vcfDataset.reference_build,
+            root_hash_hex: vcfDataset.sha256_hex,
+            root_hash_bytes: [],
+            chunk_size: Math.max(1, vcfDataset.byte_length),
+            total_chunks: 1,
+            total_payload_bytes: vcfDataset.byte_length,
+            index_offset: 0,
+            index_length: vcfDataset.chrom_index.length * 32,
+            metadata_offset: 0,
+            metadata_length: 0,
+            payload_offset: 0,
+          };
+
+          const metadata: ContainerMetadata = {
+            generator: 'plasmid-vault WASM VCF Decoder',
+            license: 'Private OPFS Vault (Air-Gapped)',
+            reference_build: vcfDataset.reference_build,
+            pyramid: vcfDataset.pyramid,
+          };
+
+          const flatEntries: WasmIndexEntryInfo[] = vcfDataset.chrom_index.map((ci) => ({
+            chrom_id: ci.chrom_id,
+            chrom_name: ci.chrom_name,
+            entry: {
+              chrom_id: ci.chrom_id,
+              entry_type: 'VcfVariant',
+              flags: 0,
+              start_pos: ci.min_pos,
+              end_pos: ci.max_pos,
+              chunk_start: 0,
+              chunk_count: 1,
+              payload_bytes: vcfDataset.byte_length,
+            },
+          }));
+
+          const vcfSession: ContainerSession = {
+            key,
+            sourceMode: 'vault',
+            sourceKind: 'local-vcf',
+            airgapped: true,
+            datasetUrl: '',
+            opfsFilename,
+            totalFileSize: vcfDataset.byte_length,
+            header: syntheticHeader,
+            containerAssembly,
+            indexBytes: new Uint8Array(0),
+            rootLeaves: [],
+            flatEntries,
+            metadata,
+            pyramid: vcfDataset.pyramid,
+            vcfDataset,
+            leafCache: new Map(),
+            chunkCache: new Map(),
+          };
+
+          if (this.cacheGeneration === startGen) {
+            this.sessions.set(key, vcfSession);
+          }
+          return vcfSession;
+        }
+
+        // Local .plasmid inside OPFS Private Vault
+        options?.onLog?.(
+          `OPFS [Vault .plasmid] ${opfsFilename} (${rawBytes.byteLength.toLocaleString()} B)`,
+          'opfs'
+        );
+        const parsedLocal = await decoderClient.parseLocalPlasmid(rawBytes);
+        if (!parsedLocal.merkle.verified) {
+          throw new Error(
+            `Merkle root integrity check failed for "${opfsFilename}" (expected ${parsedLocal.merkle.expected_root_hex.slice(0, 16)}…, computed ${parsedLocal.merkle.calculated_root_hex.slice(0, 16)}…)`
+          );
+        }
+
+        const containerAssembly = detectAssemblyFromBuildString(
+          parsedLocal.header.reference_build
+        );
+        let metadata: ContainerMetadata = {};
+        try {
+          metadata = JSON.parse(parsedLocal.metadata_json) as ContainerMetadata;
+        } catch {
+          metadata = {};
+        }
+
+        const idxStart = parsedLocal.header.index_offset;
+        const idxEnd = idxStart + parsedLocal.header.index_length;
+        const indexBytes = rawBytes.slice(idxStart, idxEnd);
+
+        options?.onLog?.(
+          `WASM parsed .plasmid v${parsedLocal.header.version} (${parsedLocal.header.reference_build}, ${parsedLocal.header.is_hierarchical ? '2-stage hierarchical' : 'flat'} index, ${parsedLocal.header.total_chunks} chunks, root=${parsedLocal.header.root_hash_hex.slice(0, 12)}…)`,
+          'worker'
+        );
+
+        const localPlasmidSession: ContainerSession = {
+          key,
+          sourceMode: 'vault',
+          sourceKind: 'opfs-plasmid',
+          airgapped: true,
+          datasetUrl: '',
+          opfsFilename,
+          totalFileSize: rawBytes.byteLength,
+          header: parsedLocal.header,
+          containerAssembly,
+          indexBytes,
+          rootLeaves: parsedLocal.leaves,
+          flatEntries: parsedLocal.entries,
+          metadata,
+          pyramid: parsedLocal.pyramid,
+          leafCache: new Map(),
+          chunkCache: new Map(),
+        };
+
+        if (this.cacheGeneration === startGen) {
+          this.sessions.set(key, localPlasmidSession);
+        }
+        return localPlasmidSession;
+      }
+
+      // Public container path (Edge HTTP 206 Range or cached demo.plasmid in OPFS)
       const headerRes = await this.readByteRange({
         datasetUrl,
         opfsFilename,
@@ -229,7 +414,6 @@ class PlasmidContainerClient {
         'worker'
       );
 
-      // 2. Exact Root Directory (hierarchical) or Flat Directory bytes
       let indexBytes: Uint8Array = new Uint8Array(0);
       let rootLeaves: WasmLeafPointerInfo[] = [];
       let flatEntries: WasmIndexEntryInfo[] = [];
@@ -254,7 +438,6 @@ class PlasmidContainerClient {
         }
       }
 
-      // 3. Exact Metadata JSON (including multi-scale PyramidIndex when embedded)
       let metadata: ContainerMetadata = {};
       if (header.metadata_length > 0) {
         const metaRes = await this.readByteRange({
@@ -280,6 +463,8 @@ class PlasmidContainerClient {
 
       const session: ContainerSession = {
         key,
+        sourceMode,
+        sourceKind: airgapped ? 'opfs-plasmid' : 'remote-plasmid',
         airgapped,
         datasetUrl,
         opfsFilename,
@@ -295,10 +480,14 @@ class PlasmidContainerClient {
         chunkCache: new Map(),
       };
 
-      this.sessions.set(key, session);
+      if (this.cacheGeneration === startGen) {
+        this.sessions.set(key, session);
+      }
       return session;
     })().finally(() => {
-      this.pendingSessions.delete(key);
+      if (this.pendingSessions.get(key) === promise) {
+        this.pendingSessions.delete(key);
+      }
     });
 
     this.pendingSessions.set(key, promise);
@@ -320,13 +509,11 @@ class PlasmidContainerClient {
     let bytesFetched = 0;
     const rangeHeaders: string[] = [];
 
-    // Identify which chunks are not yet in session.chunkCache
     const missingIndices = slicingPlan.chunk_indices.filter(
       (idx) => !session.chunkCache.has(idx)
     );
 
     if (missingIndices.length > 0) {
-      // Coalesce contiguous missing chunks into minimal HTTP Range requests
       const sorted = [...missingIndices].sort((a, b) => a - b);
       const runs: { firstIdx: number; count: number }[] = [];
       for (const idx of sorted) {
@@ -383,6 +570,7 @@ class PlasmidContainerClient {
 
   public async queryWindow(options: WindowQueryOptions): Promise<WindowQueryResult> {
     const session = await this.getSession({
+      sourceMode: options.sourceMode,
       airgapped: options.airgapped,
       datasetUrl: options.datasetUrl,
       opfsFilename: options.opfsFilename,
@@ -395,7 +583,6 @@ class PlasmidContainerClient {
     let containerEnd = Math.max(containerStart, Math.floor(options.endPos));
     let liftoverShiftBp: number | null = null;
 
-    // Translate coordinates via Rust WASM LiftoverEngine if viewing assembly differs from container build
     if (viewAssembly !== session.containerAssembly) {
       const midpoint = Math.round((containerStart + containerEnd) / 2);
       const direction =
@@ -443,6 +630,143 @@ class PlasmidContainerClient {
           rangeHeadersIssued: [],
         };
       }
+    }
+
+    // Air-gapped Local VCF Vault fast coordinate index query (0 network requests)
+    if (session.sourceKind === 'local-vcf' && session.vcfDataset) {
+      const normChrom = normalizeChromName(options.chrom);
+      const chromIdx = session.vcfDataset.chrom_index.find(
+        (ci) => ci.chrom_name.toLowerCase() === normChrom.toLowerCase()
+      );
+
+      if (!chromIdx || containerEnd < chromIdx.min_pos || containerStart > chromIdx.max_pos) {
+        options.onLog?.(
+          `Vault VCF coordinate index miss on ${normChrom}:${containerStart.toLocaleString()}-${containerEnd.toLocaleString()} (0 network bytes)`,
+          'opfs'
+        );
+        return {
+          session,
+          queriedChrom: options.chrom,
+          queriedStart: options.startPos,
+          queriedEnd: options.endPos,
+          containerQueryStart: containerStart,
+          containerQueryEnd: containerEnd,
+          liftoverShiftBp,
+          unmappedLiftoverReason: null,
+          leafPlan: null,
+          slicingPlan: {
+            chrom_id: chromIdx?.chrom_id ?? 0,
+            start_pos: containerStart,
+            end_pos: containerEnd,
+            chunk_indices: [],
+            byte_ranges: [],
+            entries: [],
+            total_chunk_bytes: 0,
+            total_download_bytes: 0,
+          },
+          variants: [],
+          referenceSequence: null,
+          annotations: [],
+          matchedEntries: [],
+          chunkHashes: [],
+          bytesFetchedThisQuery: 0,
+          rangeHeadersIssued: [],
+        };
+      }
+
+      const chromSlice = session.vcfDataset.variants.slice(
+        chromIdx.start_index,
+        chromIdx.end_index + 1
+      );
+      let matchedVariants = chromSlice.filter((v) => {
+        const varEnd = v.pos + Math.max(1, v.ref.length) - 1;
+        return v.pos <= containerEnd && varEnd >= containerStart;
+      });
+
+      if (viewAssembly !== session.containerAssembly && liftoverShiftBp !== null) {
+        const reverseDir =
+          session.containerAssembly === 'GRCh38' && viewAssembly === 'GRCh37'
+            ? 'hg38_to_hg19'
+            : 'hg19_to_hg38';
+        const liftedVariants: ParsedVariant[] = [];
+        for (const v of matchedVariants) {
+          options.signal?.throwIfAborted();
+          try {
+            const rev = await decoderClient.liftoverCoordinate(
+              reverseDir,
+              v.chrom,
+              v.pos,
+              v.ref
+            );
+            if (rev.lifted_pos >= 1) {
+              liftedVariants.push({ ...v, pos: rev.lifted_pos });
+            }
+          } catch {
+            // Fail-closed: omit variants outside verified Liftover intervals instead of fabricating coordinates
+          }
+        }
+        matchedVariants = liftedVariants;
+      }
+
+      const matchedEntry: PlasmidIndexEntry = {
+        chrom_id: chromIdx.chrom_id,
+        entry_type: 'VcfVariant',
+        flags: 0,
+        start_pos: chromIdx.min_pos,
+        end_pos: chromIdx.max_pos,
+        chunk_start: 0,
+        chunk_count: 1,
+        payload_bytes: session.vcfDataset.byte_length,
+      };
+
+      const chunkHashes: WasmChunkHashInfo[] = [
+        {
+          chunk_index: 0,
+          byte_length: session.vcfDataset.byte_length,
+          sha256_hex: session.vcfDataset.sha256_hex,
+        },
+      ];
+
+      const slicingPlan: SlicingPlan = {
+        chrom_id: chromIdx.chrom_id,
+        start_pos: containerStart,
+        end_pos: containerEnd,
+        chunk_indices: [0],
+        byte_ranges: [
+          {
+            start: 0,
+            end: Math.max(0, session.vcfDataset.byte_length - 1),
+          },
+        ],
+        entries: matchedVariants.length > 0 ? [matchedEntry] : [],
+        total_chunk_bytes: session.vcfDataset.byte_length,
+        total_download_bytes: 0,
+      };
+
+      options.onLog?.(
+        `OPFS Vault sliced ${matchedVariants.length} variant(s) on ${normChrom} (0 network bytes)`,
+        'opfs'
+      );
+
+      return {
+        session,
+        queriedChrom: options.chrom,
+        queriedStart: options.startPos,
+        queriedEnd: options.endPos,
+        containerQueryStart: containerStart,
+        containerQueryEnd: containerEnd,
+        liftoverShiftBp,
+        unmappedLiftoverReason: null,
+        leafPlan: null,
+        slicingPlan,
+        variants: matchedVariants,
+        referenceSequence: null,
+        annotations: [],
+        matchedEntries: matchedVariants.length > 0 ? [matchedEntry] : [],
+        chunkHashes,
+        bytesFetchedThisQuery: 0,
+        rangeHeadersIssued: [],
+      };
     }
 
     let bytesFetchedThisQuery = 0;
@@ -574,6 +898,7 @@ class PlasmidContainerClient {
       containerEnd
     );
 
+    options.signal?.throwIfAborted();
     let variants = decoded.variants;
     if (viewAssembly !== session.containerAssembly && liftoverShiftBp !== null) {
       const reverseDir =
@@ -582,6 +907,7 @@ class PlasmidContainerClient {
           : 'hg19_to_hg38';
       const liftedVariants: ParsedVariant[] = [];
       for (const v of variants) {
+        options.signal?.throwIfAborted();
         try {
           const rev = await decoderClient.liftoverCoordinate(
             reverseDir,
@@ -589,9 +915,11 @@ class PlasmidContainerClient {
             v.pos,
             v.ref
           );
-          liftedVariants.push({ ...v, pos: rev.lifted_pos });
+          if (rev.lifted_pos >= 1) {
+            liftedVariants.push({ ...v, pos: rev.lifted_pos });
+          }
         } catch {
-          liftedVariants.push({ ...v, pos: v.pos - liftoverShiftBp });
+          // Fail-closed: omit variants outside verified Liftover intervals instead of fabricating coordinates
         }
       }
       variants = liftedVariants;
@@ -624,22 +952,65 @@ class PlasmidContainerClient {
   }
 
   /**
-   * Discovers and decodes all VCF variant entries stored inside the loaded .plasmid container.
+   * Discovers and decodes VCF variant entries stored inside the loaded .plasmid or OPFS Vault VCF.
    */
-  public async loadCatalogVariants(options?: {
-    airgapped?: boolean;
-    datasetUrl?: string;
-    opfsFilename?: string;
-    signal?: AbortSignal;
-    onLog?: AuditLogger;
-  }): Promise<{ session: ContainerSession; items: CatalogVariantItem[] }> {
+  public async loadCatalogVariants(
+    options?: SessionLookupOptions
+  ): Promise<{ session: ContainerSession; items: CatalogVariantItem[] }> {
     const session = await this.getSession(options);
+
+    if (session.sourceKind === 'local-vcf' && session.vcfDataset) {
+      const chunkHashes: WasmChunkHashInfo[] = [
+        {
+          chunk_index: 0,
+          byte_length: session.vcfDataset.byte_length,
+          sha256_hex: session.vcfDataset.sha256_hex,
+        },
+      ];
+      const chromIdxMap = new Map(
+        session.vcfDataset.chrom_index.map((ci) => [ci.chrom_name, ci])
+      );
+
+      const seenKeys = new Set<string>();
+      const items: CatalogVariantItem[] = [];
+      for (const variant of session.vcfDataset.variants) {
+        if (items.length >= MAX_CATALOG_SELECTOR_ITEMS) break;
+        const itemKey = `${variant.chrom}:${variant.pos}:${variant.ref}:${variant.alt}`;
+        if (seenKeys.has(itemKey)) continue;
+        seenKeys.add(itemKey);
+
+        const ci = chromIdxMap.get(variant.chrom);
+        const entry: PlasmidIndexEntry = {
+          chrom_id: ci?.chrom_id ?? 0,
+          entry_type: 'VcfVariant',
+          flags: 0,
+          start_pos: ci?.min_pos ?? variant.pos,
+          end_pos: ci?.max_pos ?? variant.pos,
+          chunk_start: 0,
+          chunk_count: 1,
+          payload_bytes: session.vcfDataset.byte_length,
+        };
+        items.push({
+          key: itemKey,
+          variant,
+          entry,
+          byteRangeHeader: `OPFS ${session.opfsFilename} (0 network B)`,
+          chunkIndices: [0],
+          chunkHashes,
+          annotations: [],
+          bytesTransferred: 0,
+        });
+      }
+
+      return { session, items };
+    }
+
     const allEntryRecords: {
       info: WasmIndexEntryInfo;
       leaf?: WasmLeafPointerInfo;
     }[] = [];
 
-    if (session.header.is_hierarchical) {
+    if (session.header.is_hierarchical && session.flatEntries.length === 0) {
       for (const leaf of session.rootLeaves) {
         const cacheKey = `${leaf.leaf_offset}:${leaf.leaf_length}`;
         let leafBuf = session.leafCache.get(cacheKey);
@@ -662,6 +1033,16 @@ class PlasmidContainerClient {
           allEntryRecords.push({ info: entryInfo, leaf });
         }
       }
+    } else if (session.header.is_hierarchical && session.flatEntries.length > 0) {
+      for (const entryInfo of session.flatEntries) {
+        const matchingLeaf = session.rootLeaves.find(
+          (l) =>
+            l.chrom_id === entryInfo.chrom_id &&
+            entryInfo.entry.start_pos <= l.max_pos &&
+            entryInfo.entry.end_pos >= l.min_pos
+        );
+        allEntryRecords.push({ info: entryInfo, leaf: matchingLeaf });
+      }
     } else {
       for (const entryInfo of session.flatEntries) {
         allEntryRecords.push({ info: entryInfo });
@@ -672,14 +1053,17 @@ class PlasmidContainerClient {
       (r) => r.info.entry.entry_type === 'VcfVariant'
     );
 
+    const seenKeys = new Set<string>();
     const items: CatalogVariantItem[] = [];
     for (const rec of vcfRecords) {
+      if (items.length >= MAX_CATALOG_SELECTOR_ITEMS) break;
       const { chrom_name, entry } = rec.info;
       const windowRes = await this.queryWindow({
         chrom: chrom_name,
         startPos: entry.start_pos,
         endPos: entry.end_pos,
         viewAssembly: session.containerAssembly,
+        sourceMode: session.sourceMode,
         airgapped: session.airgapped,
         datasetUrl: session.datasetUrl,
         opfsFilename: session.opfsFilename,
@@ -687,14 +1071,28 @@ class PlasmidContainerClient {
         onLog: options?.onLog,
       });
 
-      const byteRangeHeader = windowRes.slicingPlan
-        ? formatByteRangeHeader(windowRes.slicingPlan.byte_ranges)
-        : 'none';
-      const bytesTransferred = windowRes.slicingPlan?.total_download_bytes ?? 0;
+      const byteRangeHeader = session.airgapped
+        ? `OPFS ${session.opfsFilename} [${
+            windowRes.slicingPlan
+              ? formatByteRangeHeader(windowRes.slicingPlan.byte_ranges)
+              : 'none'
+          }]`
+        : windowRes.slicingPlan
+          ? formatByteRangeHeader(windowRes.slicingPlan.byte_ranges)
+          : 'none';
+      const bytesTransferred =
+        session.sourceMode === 'vault'
+          ? 0
+          : (windowRes.slicingPlan?.total_download_bytes ?? 0);
 
       for (const variant of windowRes.variants) {
+        if (items.length >= MAX_CATALOG_SELECTOR_ITEMS) break;
+        const itemKey = `${variant.chrom}:${variant.pos}:${variant.ref}:${variant.alt}`;
+        if (seenKeys.has(itemKey)) continue;
+        seenKeys.add(itemKey);
+
         items.push({
-          key: `${variant.chrom}:${variant.pos}:${variant.ref}:${variant.alt}`,
+          key: itemKey,
           variant,
           entry,
           leaf: rec.leaf,
@@ -711,21 +1109,37 @@ class PlasmidContainerClient {
   }
 
   /**
-   * Verifies full SHA-256 BEP 52 Merkle Root over all payload chunks of the loaded .plasmid container.
+   * Verifies full SHA-256 BEP 52 Merkle Root (or raw OPFS VCF SHA-256 digest) in WebAssembly.
    */
-  public async verifyContainerMerkle(options?: {
-    airgapped?: boolean;
-    datasetUrl?: string;
-    opfsFilename?: string;
-    signal?: AbortSignal;
-    onLog?: AuditLogger;
-  }): Promise<{
+  public async verifyContainerMerkle(options?: SessionLookupOptions): Promise<{
     verification: WasmMerkleVerification;
     elapsedMs: number;
     session: ContainerSession;
   }> {
     const started = performance.now();
     const session = await this.getSession(options);
+
+    if (session.sourceKind === 'local-vcf') {
+      const rawBuf = await opfs.readFile(session.opfsFilename);
+      const bytes = new Uint8Array(rawBuf);
+      const { verified, sha256Hex } = await decoderClient.verifyChunkHash(
+        bytes,
+        session.header.root_hash_hex
+      );
+      return {
+        verification: {
+          verified,
+          expected_root_hex: session.header.root_hash_hex,
+          calculated_root_hex: sha256Hex,
+          total_chunks: 1,
+          verified_bytes: bytes.byteLength,
+          chunk_hashes: [sha256Hex],
+        },
+        elapsedMs: Math.round((performance.now() - started) * 10) / 10,
+        session,
+      };
+    }
+
     const { header } = session;
 
     if (header.total_payload_bytes === 0) {

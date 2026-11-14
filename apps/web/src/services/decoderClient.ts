@@ -7,6 +7,8 @@ import type {
   AnnotationRecord,
   GenomeAssembly,
   LiftoverResult,
+  ParsedLocalPlasmidDataset,
+  ParsedVcfDataset,
   PlasmidIndexEntry,
   PyramidIndex,
   SlicingPlan,
@@ -47,6 +49,14 @@ class DecoderWorkerClient {
     return DecoderWorkerClient.instance;
   }
 
+  private rejectAllPending(reason: string): void {
+    const err = new Error(reason);
+    for (const [, cb] of this.callbacks.entries()) {
+      cb.reject(err);
+    }
+    this.callbacks.clear();
+  }
+
   private initWorker(): void {
     if (typeof window !== 'undefined' && typeof Worker !== 'undefined') {
       try {
@@ -68,6 +78,12 @@ class DecoderWorkerClient {
         };
         this.worker.onerror = (err) => {
           console.error('WASM Decoder Worker error:', err);
+          this.rejectAllPending(err.message || 'WASM worker runtime failure');
+          this.worker?.terminate();
+          this.worker = null;
+        };
+        this.worker.onmessageerror = () => {
+          this.rejectAllPending('WASM worker message deserialization failure');
         };
       } catch (err) {
         console.warn('Web Worker unavailable; falling back to main-thread WASM execution', err);
@@ -174,6 +190,27 @@ class DecoderWorkerClient {
       { buffer, targetChrom, windowStart, windowEnd }
     );
     return res.variants;
+  }
+
+  public async parseVcfDataset(
+    buffer: ArrayBuffer | Uint8Array,
+    assemblyHint: string = 'GRCh38'
+  ): Promise<ParsedVcfDataset> {
+    const res = await this.callWorker<{ dataset: ParsedVcfDataset }>(
+      'PARSE_VCF_DATASET',
+      { buffer, assemblyHint }
+    );
+    return res.dataset;
+  }
+
+  public async parseLocalPlasmid(
+    buffer: ArrayBuffer | Uint8Array
+  ): Promise<ParsedLocalPlasmidDataset> {
+    const res = await this.callWorker<{ dataset: ParsedLocalPlasmidDataset }>(
+      'PARSE_LOCAL_PLASMID',
+      { buffer }
+    );
+    return res.dataset;
   }
 
   public async verifyChunkHash(

@@ -9,6 +9,7 @@ import {
   handleWorkerRequest,
 } from '../.wrangler/test-build/workers/genome-decoder.worker.js';
 import { plasmidContainerClient } from '../.wrangler/test-build/services/plasmidContainerClient.js';
+import { opfs } from '../.wrangler/test-build/services/opfs.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const wasmBytes = readFileSync(
@@ -410,6 +411,317 @@ test('plasmidContainerClient issues exact HTTP 206 Range slices (never fixed byt
     );
   } finally {
     globalThis.fetch = originalFetch;
+    plasmidContainerClient.clearCache();
+  }
+});
+
+function createInMemoryOpfsDirectory() {
+  const dirs = new Map();
+  const files = new Map();
+
+  function makeDirHandle() {
+    const subdirs = new Map();
+    const subfiles = new Map();
+
+    return {
+      kind: 'directory',
+      async getDirectoryHandle(name, opts) {
+        if (!subdirs.has(name)) {
+          if (!opts?.create) {
+            throw new Error(`Directory not found: ${name}`);
+          }
+          subdirs.set(name, makeDirHandle());
+        }
+        return subdirs.get(name);
+      },
+      async getFileHandle(name, opts) {
+        if (!subfiles.has(name)) {
+          if (!opts?.create) {
+            throw new Error(`File not found: ${name}`);
+          }
+          subfiles.set(name, {
+            bytes: new Uint8Array(0),
+            lastModified: Date.now(),
+          });
+        }
+        const record = subfiles.get(name);
+        return {
+          kind: 'file',
+          name,
+          async getFile() {
+            return new Blob([record.bytes]);
+          },
+          async createWritable() {
+            const chunks = [];
+            return {
+              async write(data) {
+                const u8 =
+                  data instanceof Uint8Array
+                    ? data
+                    : data instanceof ArrayBuffer
+                      ? new Uint8Array(data)
+                      : Buffer.from(data);
+                chunks.push(new Uint8Array(u8));
+              },
+              async close() {
+                const total = chunks.reduce((acc, c) => acc + c.byteLength, 0);
+                const merged = new Uint8Array(total);
+                let offset = 0;
+                for (const c of chunks) {
+                  merged.set(c, offset);
+                  offset += c.byteLength;
+                }
+                record.bytes = merged;
+                record.lastModified = Date.now();
+              },
+              async abort() {},
+            };
+          },
+        };
+      },
+      async removeEntry(name) {
+        if (!subfiles.delete(name) && !subdirs.delete(name)) {
+          throw new Error(`Entry not found: ${name}`);
+        }
+      },
+      async *entries() {
+        for (const [k, v] of subdirs.entries()) {
+          yield [k, v];
+        }
+        for (const [k] of subfiles.entries()) {
+          const handle = await this.getFileHandle(k);
+          yield [k, handle];
+        }
+      },
+    };
+  }
+
+  void dirs;
+  void files;
+  return makeDirHandle();
+}
+
+test('WASM worker PARSE_VCF_DATASET and PARSE_LOCAL_PLASMID decode real arbitrary variants and PyramidIndex without hardcoded anchors', async () => {
+  const customVcf = [
+    '##fileformat=VCFv4.3',
+    '##reference=GRCh38',
+    '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE1',
+    '1\t55051215\trs28362286\tC\tA\t99\tPASS\tGENE=PCSK9;CLNSIG=Benign;AA=p.Cys679Ter\tGT:DP\t0/1:45',
+    '6\t26092913\trs1800562\tG\tA\t98\tPASS\tGENE=HFE;CLNSIG=Pathogenic;AA=p.Cys282Tyr\tGT:DP\t1/1:62',
+    '12\t111803962\trs671\tG\tA\t100\tPASS\tGENE=ALDH2;CLNSIG=Risk_factor;AA=p.Glu504Lys\tGT:DP\t0/1:53',
+  ].join('\n');
+
+  const { dataset } = await handleWorkerRequest('PARSE_VCF_DATASET', {
+    buffer: Buffer.from(customVcf, 'utf8'),
+    assemblyHint: 'GRCh38',
+  });
+
+  assert.equal(dataset.reference_build, 'GRCh38');
+  assert.equal(dataset.variants.length, 3);
+  assert.equal(dataset.pyramid.total_variants, 3);
+  assert.equal(dataset.pyramid.total_pathogenic, 1);
+  assert.equal(dataset.chrom_index.length, 3);
+  assert.deepEqual(
+    dataset.chrom_index.map((c) => c.chrom_name),
+    ['chr1', 'chr6', 'chr12']
+  );
+  assert.equal(dataset.variants[1].gene, 'HFE');
+  assert.equal(dataset.variants[1].info.GT, '1/1');
+
+  const { dataset: localPlasmid } = await handleWorkerRequest('PARSE_LOCAL_PLASMID', {
+    buffer: demoPlasmidBytes,
+  });
+  assert.equal(localPlasmid.merkle.verified, true);
+  assert.equal(localPlasmid.variants.length, 4);
+  assert.equal(localPlasmid.pyramid.total_variants, 4);
+
+  await assert.rejects(
+    () =>
+      handleWorkerRequest('PARSE_VCF_DATASET', {
+        buffer: Buffer.from('corrupted random payload without vcf columns', 'utf8'),
+        assemblyHint: 'GRCh38',
+      }),
+    /VCF dataset parse error/i
+  );
+});
+
+test('OPFS Vault stores .vcf and .plasmid in isolated directory, parses with ZERO network requests, and deletes cleanly', async () => {
+  const originalFetch = globalThis.fetch;
+  const mockRoot = createInMemoryOpfsDirectory();
+  opfs.setRootHandleForTesting(mockRoot);
+
+  let networkCalls = 0;
+  globalThis.fetch = async (url) => {
+    networkCalls += 1;
+    throw new Error(`Airgap violation! Unexpected network fetch to ${url}`);
+  };
+
+  try {
+    plasmidContainerClient.clearCache();
+
+    const vcfBytes = Buffer.from(
+      [
+        '##fileformat=VCFv4.3',
+        '##reference=GRCh38',
+        '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tVAULT_USER',
+        'chr2\t25234373\trs147001633\tC\tT\t97\tPASS\tGENE=DNMT3A;CLNSIG=Pathogenic\tGT:DP\t0/1:70',
+        'chr11\t5227002\trs334\tT\tA\t100\tPASS\tGENE=HBB;CLNSIG=Pathogenic\tGT:DP\t0/1:84',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const savedVcf = await opfs.saveVaultFile('patient_airgap.vcf', vcfBytes);
+    assert.equal(savedVcf.name, 'patient_airgap.vcf');
+    assert.equal(savedVcf.kind, 'vcf');
+    assert.equal(savedVcf.opfsPath, 'vault/patient_airgap.vcf');
+
+    const savedPlasmid = await opfs.saveVaultFile('local_panel.plasmid', demoPlasmidBytes);
+    assert.equal(savedPlasmid.kind, 'plasmid');
+    assert.equal(savedPlasmid.opfsPath, 'vault/local_panel.plasmid');
+
+    const listed = await opfs.listVaultFiles();
+    assert.equal(listed.length, 2);
+
+    // 1. Load & query local Vault VCF -> 0 network requests
+    const vcfCatalog = await plasmidContainerClient.loadCatalogVariants({
+      sourceMode: 'vault',
+      airgapped: true,
+      opfsFilename: savedVcf.opfsPath,
+    });
+    assert.equal(vcfCatalog.items.length, 2);
+    assert.equal(vcfCatalog.session.pyramid.total_variants, 2);
+    assert.equal(vcfCatalog.session.pyramid.total_pathogenic, 2);
+
+    const vcfWin = await plasmidContainerClient.queryWindow({
+      chrom: 'chr2',
+      startPos: 25231000,
+      endPos: 25237000,
+      sourceMode: 'vault',
+      airgapped: true,
+      opfsFilename: savedVcf.opfsPath,
+    });
+    assert.equal(vcfWin.variants.length, 1);
+    assert.equal(vcfWin.variants[0].gene, 'DNMT3A');
+    assert.equal(vcfWin.variants[0].info.GT, '0/1');
+
+    const vcfVerify = await plasmidContainerClient.verifyContainerMerkle({
+      sourceMode: 'vault',
+      airgapped: true,
+      opfsFilename: savedVcf.opfsPath,
+    });
+    assert.equal(vcfVerify.verification.verified, true);
+
+    // 2. Load & query local Vault .plasmid -> 0 network requests
+    const plasmidCatalog = await plasmidContainerClient.loadCatalogVariants({
+      sourceMode: 'vault',
+      airgapped: true,
+      opfsFilename: savedPlasmid.opfsPath,
+    });
+    assert.equal(plasmidCatalog.items.length, 4);
+
+    const plasmidVerify = await plasmidContainerClient.verifyContainerMerkle({
+      sourceMode: 'vault',
+      airgapped: true,
+      opfsFilename: savedPlasmid.opfsPath,
+    });
+    assert.equal(plasmidVerify.verification.verified, true);
+
+    assert.equal(networkCalls, 0, 'Must perform strictly 0 network calls in Vault Airgap mode');
+
+    // 3. Delete Vault files from OPFS and verify cleanup
+    await opfs.deleteVaultFile(savedVcf.name);
+    const afterDelete = await opfs.listVaultFiles();
+    assert.equal(afterDelete.length, 1);
+    assert.equal(afterDelete[0].name, 'local_panel.plasmid');
+    assert.equal(await opfs.hasFile(savedVcf.opfsPath), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    opfs.setRootHandleForTesting(null);
+    plasmidContainerClient.clearCache();
+  }
+});
+
+test('Adversarial: CJK filenames stay distinct in OPFS, unmapped Liftover never fabricates negative coordinates, and evictFile blocks zombie session resurrection', async () => {
+  const mockRoot = createInMemoryOpfsDirectory();
+  opfs.setRootHandleForTesting(mockRoot);
+
+  try {
+    plasmidContainerClient.clearCache();
+
+    // 1. Distinct KO/ZH/JA filenames must NOT collide onto _.vcf
+    const vcfA = Buffer.from(
+      '##fileformat=VCFv4.3\n#CHROM\tPOS\tID\tREF\tALT\nchr1\t55051215\trs28362286\tC\tA\n',
+      'utf8'
+    );
+    const vcfB = Buffer.from(
+      '##fileformat=VCFv4.3\n#CHROM\tPOS\tID\tREF\tALT\nchr6\t26092913\trs1800562\tG\tA\n',
+      'utf8'
+    );
+    const savedKo1 = await opfs.saveVaultFile('홍길동.vcf', vcfA);
+    const savedKo2 = await opfs.saveVaultFile('김철수.vcf', vcfB);
+    const savedZh = await opfs.saveVaultFile('张三基因.vcf', vcfA);
+    const savedJa = await opfs.saveVaultFile('山田太郎.vcf', vcfB);
+
+    assert.equal(savedKo1.name, '홍길동.vcf');
+    assert.equal(savedKo2.name, '김철수.vcf');
+    assert.equal(savedZh.name, '张三基因.vcf');
+    assert.equal(savedJa.name, '山田太郎.vcf');
+    const files = await opfs.listVaultFiles();
+    assert.equal(files.length, 4, 'All 4 CJK vault files must coexist without overwriting');
+
+    // 2. Unmapped variant in GRCh37 VCF queried in GRCh38 view must NOT fabricate negative (-7 bp) coordinates
+    const grch37EdgeVcf = Buffer.from(
+      [
+        '##fileformat=VCFv4.3',
+        '##reference=GRCh37',
+        '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO',
+        'chr19\t503250\trs_unmapped_telomere\tA\tG\t99\tPASS\tGENE=TELO',
+        'chr19\t45411941\trs429358\tT\tC\t100\tPASS\tGENE=APOE;CLNSIG=Risk_factor',
+      ].join('\n'),
+      'utf8'
+    );
+    const savedEdge = await opfs.saveVaultFile('edge_hg19.vcf', grch37EdgeVcf);
+    // Window midpoint in GRCh38 is 44,908,684 (APOE anchor -> liftoverShiftBp = +503,257),
+    // wide enough to include pos 503,250 in GRCh37!
+    const liftedWin = await plasmidContainerClient.queryWindow({
+      chrom: 'chr19',
+      startPos: 1,
+      endPos: 89817367,
+      viewAssembly: 'GRCh38',
+      sourceMode: 'vault',
+      airgapped: true,
+      opfsFilename: savedEdge.opfsPath,
+    });
+    assert.ok(
+      liftedWin.variants.every((v) => v.pos >= 1),
+      `Must never emit negative or zero variant coordinates, got: ${JSON.stringify(liftedWin.variants)}`
+    );
+    assert.equal(liftedWin.variants.length, 1);
+    assert.equal(liftedWin.variants[0].id, 'rs429358');
+    assert.equal(liftedWin.variants[0].pos, 44908684);
+
+    // 3. Concurrent getSession + delete/evictFile must NOT resurrect zombie session into cache
+    const raceVcf = await opfs.saveVaultFile('race_delete.vcf', vcfA);
+    const inflightPromise = plasmidContainerClient.getSession({
+      sourceMode: 'vault',
+      airgapped: true,
+      opfsFilename: raceVcf.opfsPath,
+    });
+    await opfs.deleteVaultFile(raceVcf.name);
+    plasmidContainerClient.evictFile(raceVcf.opfsPath);
+    await inflightPromise.catch(() => {});
+
+    await assert.rejects(
+      () =>
+        plasmidContainerClient.getSession({
+          sourceMode: 'vault',
+          airgapped: true,
+          opfsFilename: raceVcf.opfsPath,
+        }),
+      /not found in browser OPFS/i
+    );
+  } finally {
+    opfs.setRootHandleForTesting(null);
     plasmidContainerClient.clearCache();
   }
 });

@@ -26,6 +26,7 @@ import type {
   AnnotationRecord,
   CatalogVariantItem,
   ChromosomeOverview,
+  DataSourceMode,
   GenomeAssembly,
   PlasmidIndexEntry,
   PyramidIndex,
@@ -46,6 +47,8 @@ function localizeRangeLabel(label: string, lang: SupportedLanguage): string {
     'Root Directory': { ko: '루트 디렉터리', zh: '根目录', ja: 'ルートディレクトリ' },
     'Flat Directory': { ko: '플랫 디렉터리', zh: '平面目录', ja: 'フラットディレクトリ' },
     'Container Metadata': { ko: '컨테이너 메타데이터', zh: '容器元数据', ja: 'コンテナメタデータ' },
+    'Vault VCF': { ko: '볼트 VCF', zh: '保险库 VCF', ja: '保管庫 VCF' },
+    'Vault .plasmid': { ko: '볼트 .plasmid', zh: '保险库 .plasmid', ja: '保管庫 .plasmid' },
   };
   if (map[label]) return map[label][lang];
   const leafMatch = /^Leaf Dir \((.+)\)$/.exec(label);
@@ -210,11 +213,39 @@ function localizeAuditMessage(message: string, lang: SupportedLanguage): string 
     return `OPFS 保存エラー: ${m[1]}`;
   }
 
+  m = /^WASM parsed local VCF \((.+), (\d+) variants across (\d+) chromosomes, sha256=(.+)\)$/.exec(
+    message
+  );
+  if (m) {
+    if (lang === 'ko')
+      return `WASM 로컬 VCF 파싱 완료: ${m[1]} (염색체 ${m[3]}개 내 변이 ${m[2]}건, sha256=${m[4]})`;
+    if (lang === 'zh')
+      return `WASM 已解析本地 VCF：${m[1]}（${m[3]} 条染色体共 ${m[2]} 个变异，sha256=${m[4]}）`;
+    return `WASM ローカル VCF 解析完了: ${m[1]} (${m[3]} 染色体・変異 ${m[2]} 件, sha256=${m[4]})`;
+  }
+
+  m = /^Vault VCF coordinate index miss on (.+) \(0 network bytes\)$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `로컬 볼트 색인 구간 밖: ${m[1]} (네트워크 전송 0 B)`;
+    if (lang === 'zh') return `本地保险库索引未命中：${m[1]}（网络传输 0 B）`;
+    return `ローカル保管庫索引対象外: ${m[1]} (通信量 0 B)`;
+  }
+
+  m = /^OPFS Vault sliced (\d+) variant\(s\) on (.+) \(0 network bytes\)$/.exec(message);
+  if (m) {
+    if (lang === 'ko') return `OPFS 볼트 조회 완료: ${m[2]} 변이 ${m[1]}건 (네트워크 전송 0 B)`;
+    if (lang === 'zh') return `OPFS 保险库切片完成：${m[2]} 变异 ${m[1]} 项（网络传输 0 B）`;
+    return `OPFS 保管庫スライス完了: ${m[2]} 変異 ${m[1]} 件 (通信量 0 B)`;
+  }
+
   return message;
 }
 
 export interface GenomeNavigatorProps {
   lang?: SupportedLanguage;
+  sourceMode?: DataSourceMode;
+  opfsFilename?: string;
+  containerAssembly?: GenomeAssembly;
   catalogItems?: CatalogVariantItem[];
   selectedCatalogKey?: string | null;
   onSelectCatalogKey?: (key: string) => void;
@@ -232,20 +263,25 @@ interface IndexedHotspotChip {
 
 export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
   lang = 'ko',
+  sourceMode = 'public',
+  opfsFilename = DEFAULT_OPFS_FILENAME,
+  containerAssembly = 'GRCh38',
   catalogItems = [],
   selectedCatalogKey,
   onSelectCatalogKey,
 }) => {
   const nt = TRANSLATIONS[lang].navigator;
+  const isVaultSource = sourceMode === 'vault';
 
-  const [assembly, setAssembly] = useState<GenomeAssembly>('GRCh38');
+  const [assembly, setAssembly] = useState<GenomeAssembly>(containerAssembly);
   const [selectedChrom, setSelectedChrom] = useState<string>('chr7');
   const [windowStart, setWindowStart] = useState<number>(140750000);
   const [windowEnd, setWindowEnd] = useState<number>(140756000);
 
-  const [isAirgapped, setIsAirgapped] = useState<boolean>(false);
+  const [isPublicAirgapped, setIsPublicAirgapped] = useState<boolean>(false);
   const [isOpfsCached, setIsOpfsCached] = useState<boolean>(false);
   const [cachingProgress, setCachingProgress] = useState<number | null>(null);
+  const effectiveAirgapped = isVaultSource ? true : isPublicAirgapped;
 
   const [assemblyPyramid, setAssemblyPyramid] = useState<PyramidIndex | null>(null);
   const [containerPyramid, setContainerPyramid] = useState<PyramidIndex | null>(null);
@@ -277,6 +313,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const assemblyRef = useRef<GenomeAssembly>(containerAssembly);
 
   // Redraw all 4 canvases cleanly whenever container or viewport width changes
   useEffect(() => {
@@ -306,20 +343,27 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     ]);
   }, []);
 
-  // Check OPFS cache state on mount and sync airgap flag
+  // Sync viewing assembly when active container/vault assembly changes
   useEffect(() => {
+    assemblyRef.current = containerAssembly;
+    setAssembly(containerAssembly);
+  }, [containerAssembly, opfsFilename]);
+
+  // Check OPFS cache state for public demo container on mount
+  useEffect(() => {
+    if (isVaultSource) return;
     opfs.hasFile(DEFAULT_OPFS_FILENAME).then((cached: boolean) => {
       setIsOpfsCached(cached);
       if (cached) {
         opfs.setAirgapped(true);
-        setIsAirgapped(true);
+        setIsPublicAirgapped(true);
         addLog(
           `Found ${DEFAULT_OPFS_FILENAME} in OPFS. Engaged offline Airgap slicing.`,
           'opfs'
         );
       }
     });
-  }, [addLog]);
+  }, [addLog, isVaultSource]);
 
   // Load authoritative chromosome geometry from Rust WASM for active assembly
   useEffect(() => {
@@ -345,35 +389,49 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     const found = catalogItems.find((item) => item.key === selectedCatalogKey);
     if (!found) return;
 
+    let cancelled = false;
     const targetChrom = found.variant.chrom;
+    const viewAsm = assemblyRef.current;
+
     const applyJump = async () => {
       let targetPos = found.variant.pos;
-      if (assembly === 'GRCh37') {
+      if (viewAsm !== containerAssembly) {
+        const dir =
+          containerAssembly === 'GRCh38' && viewAsm === 'GRCh37'
+            ? 'hg38_to_hg19'
+            : 'hg19_to_hg38';
         try {
           const lifted = await decoderClient.liftoverCoordinate(
-            'hg38_to_hg19',
+            dir,
             targetChrom,
             found.variant.pos,
             found.variant.ref
           );
           targetPos = lifted.lifted_pos;
         } catch {
-          // Keep container coordinate if unmapped
+          // Keep source coordinate if unmapped
         }
       }
+      if (cancelled) return;
       setSelectedChrom(targetChrom);
       setWindowStart(Math.max(1, targetPos - 3000));
       setWindowEnd(targetPos + 3000);
       setSelectedVariantPos(targetPos);
     };
     void applyJump();
-  }, [selectedCatalogKey, catalogItems, assembly]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCatalogKey, catalogItems, containerAssembly, opfsFilename]);
 
   const activeChromosomesMap = useMemo(() => {
     const map = new Map<string, ChromosomeOverview>();
+    const normalizeBuild = (b: string): GenomeAssembly => {
+      const upper = b.toUpperCase();
+      return upper.includes('37') || upper.includes('19') ? 'GRCh37' : 'GRCh38';
+    };
     const baseSource =
-      containerPyramid &&
-      containerPyramid.build.toUpperCase().includes(assembly === 'GRCh37' ? '37' : '38')
+      containerPyramid && normalizeBuild(containerPyramid.build) === assembly
         ? containerPyramid
         : assemblyPyramid;
 
@@ -443,6 +501,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
       );
       const newStart = Math.max(1, Math.round(lifted.lifted_pos - span / 2));
       const newEnd = newStart + span;
+      assemblyRef.current = newAssembly;
       setAssembly(newAssembly);
       setWindowStart(newStart);
       setWindowEnd(newEnd);
@@ -452,6 +511,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      assemblyRef.current = newAssembly;
       setAssembly(newAssembly);
       addLog(
         `Switched assembly to ${newAssembly} (${selectedChrom}:${midpoint.toLocaleString()} unmapped: ${msg})`,
@@ -462,17 +522,21 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
 
   const handleJumpToChip = async (chip: IndexedHotspotChip) => {
     let targetPos = chip.pos;
-    if (assembly === 'GRCh37') {
+    if (assembly !== containerAssembly) {
+      const dir =
+        containerAssembly === 'GRCh38' && assembly === 'GRCh37'
+          ? 'hg38_to_hg19'
+          : 'hg19_to_hg38';
       try {
         const lifted = await decoderClient.liftoverCoordinate(
-          'hg38_to_hg19',
+          dir,
           chip.chrom,
           chip.pos,
           'N'
         );
         targetPos = lifted.lifted_pos;
       } catch {
-        // Keep container coordinate if unmapped
+        // Keep source coordinate if unmapped
       }
     }
     setSelectedChrom(chip.chrom);
@@ -501,7 +565,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
       plasmidContainerClient.clearCache();
       opfs.setAirgapped(true);
       setIsOpfsCached(true);
-      setIsAirgapped(true);
+      setIsPublicAirgapped(true);
       setCachingProgress(null);
       setLoadError(null);
       addLog(
@@ -534,10 +598,13 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
           startPos: start,
           endPos: end,
           viewAssembly: viewAsm,
-          airgapped: isAirgapped,
+          sourceMode,
+          airgapped: effectiveAirgapped,
+          opfsFilename,
           signal: controller.signal,
           onLog: addLog,
         });
+        if (controller.signal.aborted) return;
 
         setContainerPyramid(res.session.pyramid);
         setLastQueryResult(res);
@@ -557,6 +624,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
 
         if (span > 20000 && res.variants.length > 0) {
           const bins = await decoderClient.computeDensityBins(res.variants, start, end, 60);
+          if (controller.signal.aborted) return;
           setDensityBins(bins);
         } else {
           setDensityBins([]);
@@ -564,6 +632,9 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
 
         setIsLoading(false);
       } catch (err: unknown) {
+        if (controller.signal.aborted) {
+          return;
+        }
         if (
           err instanceof Error &&
           (err.name === 'AbortError' || err.name === 'AbortEvent')
@@ -579,10 +650,10 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
         setMatchedEntries([]);
         setChunkHashes([]);
         setDensityBins([]);
-        addLog(`Slice error: ${message}`, isAirgapped ? 'opfs' : 'network');
+        addLog(`Slice error: ${message}`, effectiveAirgapped ? 'opfs' : 'network');
       }
     },
-    [isAirgapped, addLog]
+    [sourceMode, effectiveAirgapped, opfsFilename, addLog]
   );
 
   useEffect(() => {
@@ -1183,59 +1254,84 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             ))}
           </div>
 
-          <button
-            onClick={() => {
-              const next = !isAirgapped;
-              opfs.setAirgapped(next);
-              setIsAirgapped(next);
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '7px 12px',
-              borderRadius: '8px',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              border: isAirgapped ? '1px solid #86efac' : '1px solid #e2e8f0',
-              backgroundColor: isAirgapped ? '#f0fdf4' : '#ffffff',
-              color: isAirgapped ? '#166534' : '#475569',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {isAirgapped ? (
-              <ShieldCheck size={15} color="#16a34a" />
-            ) : (
-              <Shield size={15} color="#64748b" />
-            )}
-            {isAirgapped ? nt.airgapActive : nt.edgeStreaming}
-          </button>
-
-          {!isOpfsCached && (
-            <button
-              onClick={() => void handleCacheToOpfs()}
-              disabled={cachingProgress !== null}
+          {isVaultSource ? (
+            <span
+              data-testid="navigator-vault-airgap-badge"
               style={{
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
                 padding: '7px 12px',
                 borderRadius: '8px',
                 fontSize: '12px',
-                fontWeight: 600,
-                cursor: cachingProgress !== null ? 'wait' : 'pointer',
-                border: '1px solid #2563eb',
-                backgroundColor: '#2563eb',
-                color: '#ffffff',
-                whiteSpace: 'nowrap',
+                fontWeight: 700,
+                border: '1px solid #86efac',
+                backgroundColor: '#f0fdf4',
+                color: '#166534',
+                maxWidth: '100%',
+                wordBreak: 'break-word',
               }}
             >
-              <Download size={14} />
-              {cachingProgress !== null
-                ? `${nt.cachingPrefix} (${cachingProgress}%)`
-                : nt.cacheToOpfs}
-            </button>
+              <ShieldCheck size={15} color="#16a34a" style={{ flexShrink: 0 }} />
+              <span>{nt.vaultAirgapLocked}</span>
+            </span>
+          ) : (
+            <>
+              <button
+                onClick={() => {
+                  const next = !isPublicAirgapped;
+                  opfs.setAirgapped(next);
+                  setIsPublicAirgapped(next);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 12px',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  border: isPublicAirgapped ? '1px solid #86efac' : '1px solid #e2e8f0',
+                  backgroundColor: isPublicAirgapped ? '#f0fdf4' : '#ffffff',
+                  color: isPublicAirgapped ? '#166534' : '#475569',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {isPublicAirgapped ? (
+                  <ShieldCheck size={15} color="#16a34a" />
+                ) : (
+                  <Shield size={15} color="#64748b" />
+                )}
+                {isPublicAirgapped ? nt.airgapActive : nt.edgeStreaming}
+              </button>
+
+              {!isOpfsCached && (
+                <button
+                  onClick={() => void handleCacheToOpfs()}
+                  disabled={cachingProgress !== null}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '7px 12px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: cachingProgress !== null ? 'wait' : 'pointer',
+                    border: '1px solid #2563eb',
+                    backgroundColor: '#2563eb',
+                    color: '#ffffff',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <Download size={14} />
+                  {cachingProgress !== null
+                    ? `${nt.cachingPrefix} (${cachingProgress}%)`
+                    : nt.cacheToOpfs}
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

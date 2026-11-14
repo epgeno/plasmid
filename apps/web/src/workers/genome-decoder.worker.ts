@@ -19,7 +19,9 @@ import type {
   AnnotationRecord,
   DensityBin,
   LiftoverResult,
+  ParsedLocalPlasmidDataset,
   ParsedVariant,
+  ParsedVcfDataset,
   PlasmidIndexEntry,
   PyramidIndex,
   SlicingPlan,
@@ -29,7 +31,9 @@ import type {
   WasmIndexEntryInfo,
   WasmLeafPointerInfo,
   WasmLeafQueryPlan,
+  WasmLocalPlasmidDatasetRaw,
   WasmMerkleVerification,
+  WasmVcfDatasetRaw,
 } from '../types/plasmid';
 
 export type { ParsedVariant, DensityBin };
@@ -206,6 +210,45 @@ export async function handleWorkerRequest(
         .map(mapVcfRecordToParsedVariant);
 
       return { variants };
+    }
+
+    case 'PARSE_VCF_DATASET': {
+      const bytes = toUint8Array(payload.buffer);
+      const assemblyHint: string =
+        typeof payload.assemblyHint === 'string' && payload.assemblyHint
+          ? payload.assemblyHint
+          : 'GRCh38';
+      const raw = PlasmidWasmEngine.parse_vcf_dataset(
+        bytes,
+        assemblyHint
+      ) as WasmVcfDatasetRaw;
+      const dataset: ParsedVcfDataset = {
+        reference_build: raw.reference_build,
+        byte_length: raw.byte_length,
+        sha256_hex: raw.sha256_hex,
+        pyramid: raw.pyramid,
+        chrom_index: raw.chrom_index,
+        variants: raw.variants.map(mapVcfRecordToParsedVariant),
+      };
+      return { dataset };
+    }
+
+    case 'PARSE_LOCAL_PLASMID': {
+      const bytes = toUint8Array(payload.buffer);
+      const raw = PlasmidWasmEngine.parse_local_plasmid(
+        bytes
+      ) as WasmLocalPlasmidDatasetRaw;
+      const dataset: ParsedLocalPlasmidDataset = {
+        header: raw.header,
+        metadata_json: raw.metadata_json,
+        merkle: raw.merkle,
+        pyramid: raw.pyramid,
+        chrom_index: raw.chrom_index,
+        leaves: raw.leaves,
+        entries: raw.entries,
+        variants: raw.variants.map(mapVcfRecordToParsedVariant),
+      };
+      return { dataset };
     }
 
     case 'DECODE_FASTA_SLICE': {
