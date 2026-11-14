@@ -35,10 +35,14 @@ pub struct VcfDecoder;
 impl VcfDecoder {
     /// Decodes variant records from a raw UTF-8 or BGZF-decompressed VCF byte slice.
     pub fn decode_slice(data: &[u8]) -> Result<Vec<VcfVariantRecord>> {
-        let text = match std::str::from_utf8(data) {
+        let trimmed_data = match data.iter().rposition(|&b| b != 0) {
+            Some(last) => &data[..=last],
+            None => &[],
+        };
+
+        let text = match std::str::from_utf8(trimmed_data) {
             Ok(s) => s,
             Err(_) => {
-                // If invalid utf8, attempt lossy decoding
                 return Err(PlasmidCoreError::VcfParse(
                     "Invalid UTF-8 in VCF byte slice".to_string(),
                 ));
@@ -154,5 +158,26 @@ mod tests {
         assert_eq!(r.clinvar_significance.as_deref(), Some("Pathogenic"));
         assert_eq!(r.amino_acid_change.as_deref(), Some("p.Val600Glu"));
         assert!(r.is_pathogenic());
+    }
+
+    #[test]
+    fn test_vcf_decoder_multi_variant_and_zero_padded_chunk() {
+        let mut chunk = vec![0u8; 16384];
+        let payload = concat!(
+            "chr7\t140453136\trs113488022\tT\tA\t100\tPASS\tGENE=BRAF;CLNSIG=Pathogenic\n",
+            "chr7\t140453200\trs9999999\tG\tC\t90\tPASS\tGENE=BRAF;CLNSIG=Benign"
+        )
+        .as_bytes();
+        chunk[..payload.len()].copy_from_slice(payload);
+
+        let records = VcfDecoder::decode_slice(&chunk).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].pos, 140453136);
+        assert_eq!(
+            records[0].clinvar_significance.as_deref(),
+            Some("Pathogenic")
+        );
+        assert_eq!(records[1].pos, 140453200);
+        assert_eq!(records[1].clinvar_significance.as_deref(), Some("Benign"));
     }
 }

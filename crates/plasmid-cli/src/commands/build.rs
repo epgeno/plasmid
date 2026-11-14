@@ -40,6 +40,13 @@ pub struct BuildArgs {
     pub metadata: Option<String>,
 }
 
+struct PendingVcfRecord {
+    chrom_id: u16,
+    pos: u64,
+    end_pos: u64,
+    line_bytes: Vec<u8>,
+}
+
 pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
     println!("📦 Compiling .plasmid genomic archive...");
     println!("   Reference Build: {}", args.reference);
@@ -67,14 +74,16 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
     builder.set_metadata(&meta_str);
 
     let mut vcf_count = 0usize;
+    let mut vcf_block_count = 0usize;
     let mut fasta_count = 0usize;
     let mut annotation_count = 0usize;
 
-    // 2. Parse VCF
+    // 2. Parse VCF and pack records into 16KB chromosome-scoped batches with newline delimiters
     if let Some(vcf_path) = &args.vcf {
         println!("   Loading VCF from: {}", vcf_path.display());
         let file = File::open(vcf_path)?;
         let reader = BufReader::new(file);
+        let mut pending_vcf = Vec::new();
 
         for line_res in reader.lines() {
             let line = line_res?;
@@ -102,22 +111,86 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
             let ref_seq = parts[3];
             let end_pos = pos + (ref_seq.len().max(1) as u64) - 1;
 
-            if let Ok(variants) = plasmid_core::decoder::VcfDecoder::decode_slice(line.as_bytes()) {
+            if let Ok(variants) =
+                plasmid_core::decoder::VcfDecoder::decode_slice(trimmed.as_bytes())
+            {
                 for v in &variants {
                     pyramid.ingest_variant(chrom_str, v);
                 }
             }
 
-            builder.add_item(
+            let mut line_bytes = Vec::with_capacity(trimmed.len() + 1);
+            line_bytes.extend_from_slice(trimmed.as_bytes());
+            line_bytes.push(b'\n');
+
+            pending_vcf.push(PendingVcfRecord {
                 chrom_id,
-                EntryType::VcfVariant,
                 pos,
                 end_pos,
-                line.into_bytes(),
-            );
+                line_bytes,
+            });
             vcf_count += 1;
         }
-        println!("   ↳ Ingested {} variant records", vcf_count);
+
+        // Sort stably by (chrom_id, pos) so packed chunk coordinate bounds remain tight
+        pending_vcf.sort_by_key(|r| (r.chrom_id, r.pos));
+
+        let chunk_budget = DEFAULT_CHUNK_SIZE as usize;
+        let mut batch_chrom: Option<u16> = None;
+        let mut batch_start = 0u64;
+        let mut batch_end = 0u64;
+        let mut batch_buf: Vec<u8> = Vec::new();
+
+        for rec in pending_vcf {
+            let should_flush = match batch_chrom {
+                Some(cid) => {
+                    cid != rec.chrom_id
+                        || (!batch_buf.is_empty()
+                            && batch_buf.len() + rec.line_bytes.len() > chunk_budget)
+                }
+                None => false,
+            };
+
+            if should_flush {
+                if let Some(cid) = batch_chrom {
+                    builder.add_item(
+                        cid,
+                        EntryType::VcfVariant,
+                        batch_start,
+                        batch_end,
+                        std::mem::take(&mut batch_buf),
+                    );
+                    vcf_block_count += 1;
+                }
+                batch_chrom = None;
+            }
+
+            if batch_chrom.is_none() {
+                batch_chrom = Some(rec.chrom_id);
+                batch_start = rec.pos;
+                batch_end = rec.end_pos;
+            } else {
+                batch_start = batch_start.min(rec.pos);
+                batch_end = batch_end.max(rec.end_pos);
+            }
+            batch_buf.extend_from_slice(&rec.line_bytes);
+        }
+
+        if let (Some(cid), false) = (batch_chrom, batch_buf.is_empty()) {
+            builder.add_item(
+                cid,
+                EntryType::VcfVariant,
+                batch_start,
+                batch_end,
+                batch_buf,
+            );
+            vcf_block_count += 1;
+        }
+
+        println!(
+            "   ↳ Ingested {} variant records ({} packed blocks)",
+            vcf_count, vcf_block_count
+        );
     }
 
     // 3. Parse FASTA
@@ -158,10 +231,16 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
                 current_pos = 1;
             } else if let Some(cid) = current_chrom {
                 current_seq.push_str(trimmed);
-                // Chunk every 16,384 bases to align with 16KB Merkle leaves
-                if current_seq.len() >= DEFAULT_CHUNK_SIZE as usize {
-                    let end_pos = current_pos + current_seq.len() as u64 - 1;
-                    let payload = format!(">{}\n{}\n", id_to_chrom(cid), current_seq);
+                let chrom_label = id_to_chrom(cid);
+                // Reserve exact header + newline overhead (">{chrom}\n" + "\n") so each payload fits inside one 16KB Merkle leaf
+                let max_seq_len = (DEFAULT_CHUNK_SIZE as usize)
+                    .saturating_sub(chrom_label.len() + 3)
+                    .max(1);
+
+                while current_seq.len() >= max_seq_len {
+                    let chunk_seq: String = current_seq.drain(..max_seq_len).collect();
+                    let end_pos = current_pos + chunk_seq.len() as u64 - 1;
+                    let payload = format!(">{chrom_label}\n{chunk_seq}\n");
                     builder.add_item(
                         cid,
                         EntryType::ReferenceFasta,
@@ -171,7 +250,6 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
                     );
                     fasta_count += 1;
                     current_pos = end_pos + 1;
-                    current_seq.clear();
                 }
             }
         }
@@ -215,11 +293,14 @@ pub fn execute(args: BuildArgs) -> Result<(), Box<dyn std::error::Error>> {
                 })();
 
                 if let Some((cid, s, e)) = parsed_coord {
-                    let note = if trimmed.starts_with('#') {
+                    let mut note = if trimmed.starts_with('#') {
                         trimmed.to_string()
                     } else {
                         format!("## {}", trimmed)
                     };
+                    if !note.ends_with('\n') {
+                        note.push('\n');
+                    }
                     // RFC-0003 governance validation on annotation payload
                     plasmid_core::governance::DataGovernanceGuard::validate_annotation_payload(
                         &note,

@@ -70,8 +70,13 @@ pub fn execute(args: QueryArgs) -> Result<(), Box<dyn std::error::Error>> {
         filter_type,
     )?;
 
-    let slice =
-        GenomicCoordinator::decode_slice(&mut plasmid_reader, &args.chr, args.start, args.end)?;
+    let slice = GenomicCoordinator::decode_slice_filtered(
+        &mut plasmid_reader,
+        &args.chr,
+        args.start,
+        args.end,
+        filter_type,
+    )?;
 
     let bytes_accessed = plan.total_download_bytes;
     let saved_pct = if file_size > 0 {

@@ -121,6 +121,7 @@ impl PlasmidDirectory {
     }
 
     /// Query entries overlapping a specific genomic coordinate range.
+    /// A `chrom_id` of `0` acts as a wildcard matching all chromosomes.
     pub fn query_range(
         &self,
         chrom_id: u16,
@@ -131,7 +132,7 @@ impl PlasmidDirectory {
         self.entries
             .iter()
             .filter(|e| {
-                e.chrom_id == chrom_id
+                (chrom_id == 0 || e.chrom_id == chrom_id)
                     && e.start_pos <= end_pos
                     && e.end_pos >= start_pos
                     && filter_type.is_none_or(|ft| e.entry_type == ft)
@@ -231,6 +232,7 @@ impl PlasmidRootDirectory {
     }
 
     /// Finds all leaf pointers overlapping a given genomic coordinate range.
+    /// A `chrom_id` of `0` acts as a wildcard matching all chromosomes.
     pub fn find_overlapping_leaves(
         &self,
         chrom_id: u16,
@@ -239,7 +241,11 @@ impl PlasmidRootDirectory {
     ) -> Vec<PlasmidLeafPointer> {
         self.leaves
             .iter()
-            .filter(|l| l.chrom_id == chrom_id && l.min_pos <= end_pos && l.max_pos >= start_pos)
+            .filter(|l| {
+                (chrom_id == 0 || l.chrom_id == chrom_id)
+                    && l.min_pos <= end_pos
+                    && l.max_pos >= start_pos
+            })
             .copied()
             .collect()
     }
