@@ -1,10 +1,40 @@
-import type { ParsedVariant, DensityBin } from '../workers/genome-decoder.worker';
+import {
+  handleWorkerRequest,
+  type DensityBin,
+  type ParsedVariant,
+} from '../workers/genome-decoder.worker.js';
+import type {
+  AnnotationRecord,
+  GenomeAssembly,
+  LiftoverResult,
+  PlasmidIndexEntry,
+  PyramidIndex,
+  SlicingPlan,
+  UnifiedGenomicSlice,
+  WasmChunkHashInfo,
+  WasmHeaderInfo,
+  WasmIndexEntryInfo,
+  WasmLeafPointerInfo,
+  WasmLeafQueryPlan,
+  WasmMerkleVerification,
+} from '../types/plasmid';
+
+export interface DecodedSlicePayload {
+  slice: UnifiedGenomicSlice;
+  variants: ParsedVariant[];
+  referenceSequence: string | null;
+  annotations: AnnotationRecord[];
+  chunkHashes: WasmChunkHashInfo[];
+}
 
 class DecoderWorkerClient {
   private static instance: DecoderWorkerClient;
   private worker: Worker | null = null;
-  private callbacks: Map<string, { resolve: (val: any) => void; reject: (err: any) => void }> = new Map();
-  private reqId: number = 0;
+  private callbacks: Map<
+    string,
+    { resolve: (val: any) => void; reject: (err: Error) => void }
+  > = new Map();
+  private reqId = 0;
 
   private constructor() {
     this.initWorker();
@@ -17,7 +47,7 @@ class DecoderWorkerClient {
     return DecoderWorkerClient.instance;
   }
 
-  private initWorker() {
+  private initWorker(): void {
     if (typeof window !== 'undefined' && typeof Worker !== 'undefined') {
       try {
         this.worker = new Worker(
@@ -32,42 +62,185 @@ class DecoderWorkerClient {
             if (success) {
               cb.resolve(rest);
             } else {
-              cb.reject(new Error(error || 'Worker operation failed'));
+              cb.reject(new Error(error || 'WASM worker operation failed'));
             }
           }
         };
+        this.worker.onerror = (err) => {
+          console.error('WASM Decoder Worker error:', err);
+        };
       } catch (err) {
-        console.warn('Web Worker initialization failed, fallback to sync processing', err);
+        console.warn('Web Worker unavailable; falling back to main-thread WASM execution', err);
+        this.worker = null;
       }
     }
   }
 
+  private async callWorker<T>(type: string, payload: Record<string, any>): Promise<T> {
+    if (!this.worker) {
+      return (await handleWorkerRequest(type, payload)) as T;
+    }
+
+    const id = `wasm_req_${++this.reqId}`;
+    return new Promise<T>((resolve, reject) => {
+      this.callbacks.set(id, { resolve, reject });
+      this.worker!.postMessage({ id, type, payload });
+    });
+  }
+
+  public async parseHeader(buffer: Uint8Array): Promise<WasmHeaderInfo> {
+    const res = await this.callWorker<{ header: WasmHeaderInfo }>('PARSE_HEADER', {
+      buffer,
+    });
+    return res.header;
+  }
+
+  public async parseRootDirectory(buffer: Uint8Array): Promise<WasmLeafPointerInfo[]> {
+    const res = await this.callWorker<{ leaves: WasmLeafPointerInfo[] }>(
+      'PARSE_ROOT_DIRECTORY',
+      { buffer }
+    );
+    return res.leaves;
+  }
+
+  public async queryRootLeaves(
+    buffer: Uint8Array,
+    chrom: string,
+    startPos: number,
+    endPos: number
+  ): Promise<WasmLeafQueryPlan> {
+    const res = await this.callWorker<{ plan: WasmLeafQueryPlan }>(
+      'QUERY_ROOT_LEAVES',
+      { buffer, chrom, startPos, endPos }
+    );
+    return res.plan;
+  }
+
+  public async parseDirectoryEntries(buffer: Uint8Array): Promise<WasmIndexEntryInfo[]> {
+    const res = await this.callWorker<{ entries: WasmIndexEntryInfo[] }>(
+      'PARSE_DIRECTORY_ENTRIES',
+      { buffer }
+    );
+    return res.entries;
+  }
+
+  public async planRangeSlice(
+    buffer: Uint8Array,
+    chrom: string,
+    startPos: number,
+    endPos: number,
+    payloadOffset: number,
+    chunkSize: number
+  ): Promise<SlicingPlan> {
+    const res = await this.callWorker<{ plan: SlicingPlan }>('PLAN_RANGE_SLICE', {
+      buffer,
+      chrom,
+      startPos,
+      endPos,
+      payloadOffset,
+      chunkSize,
+    });
+    return res.plan;
+  }
+
+  public async decodePlasmidSlice(
+    entries: PlasmidIndexEntry[],
+    chunksBuffer: Uint8Array,
+    chunkIndices: number[],
+    chunkSize: number,
+    chrom: string,
+    startPos: number,
+    endPos: number
+  ): Promise<DecodedSlicePayload> {
+    return this.callWorker<DecodedSlicePayload>('DECODE_PLASMID_SLICE', {
+      entries,
+      chunksBuffer,
+      chunkIndices,
+      chunkSize,
+      chrom,
+      startPos,
+      endPos,
+    });
+  }
+
   public async parseVcfChunk(
-    buffer: ArrayBuffer,
+    buffer: ArrayBuffer | Uint8Array,
     targetChrom?: string,
     windowStart?: number,
     windowEnd?: number
   ): Promise<ParsedVariant[]> {
-    if (!this.worker) {
-      // Inline fallback
-      return this.fallbackParseVcf(buffer, targetChrom, windowStart, windowEnd);
-    }
+    const res = await this.callWorker<{ variants: ParsedVariant[] }>(
+      'PARSE_VCF_CHUNK',
+      { buffer, targetChrom, windowStart, windowEnd }
+    );
+    return res.variants;
+  }
 
-    const id = `req_${++this.reqId}`;
-    return new Promise((resolve, reject) => {
-      this.callbacks.set(id, {
-        resolve: (data) => resolve(data.variants),
-        reject,
-      });
-      this.worker!.postMessage(
-        {
-          id,
-          type: 'PARSE_VCF_CHUNK',
-          payload: { buffer, targetChrom, windowStart, windowEnd },
-        },
-        [buffer]
-      );
-    });
+  public async verifyChunkHash(
+    chunkBuffer: Uint8Array,
+    expectedHex?: string
+  ): Promise<{ verified: boolean; sha256Hex: string }> {
+    return this.callWorker<{ verified: boolean; sha256Hex: string }>(
+      'VERIFY_CHUNK_HASH',
+      { chunkBuffer, expectedHex }
+    );
+  }
+
+  public async verifyMerkleTree(
+    payloadBuffer: Uint8Array,
+    chunkSize: number,
+    expectedRootHex: string
+  ): Promise<WasmMerkleVerification> {
+    const res = await this.callWorker<{ verification: WasmMerkleVerification }>(
+      'VERIFY_MERKLE_TREE',
+      { payloadBuffer, chunkSize, expectedRootHex }
+    );
+    return res.verification;
+  }
+
+  public async getAssemblyOverview(assembly: GenomeAssembly): Promise<PyramidIndex> {
+    const res = await this.callWorker<{ pyramid: PyramidIndex }>(
+      'GET_ASSEMBLY_OVERVIEW',
+      { assembly }
+    );
+    return res.pyramid;
+  }
+
+  public async liftoverCoordinate(
+    direction: 'hg19_to_hg38' | 'hg38_to_hg19',
+    chrom: string,
+    pos: number,
+    refAllele: string
+  ): Promise<LiftoverResult> {
+    const res = await this.callWorker<{ result: LiftoverResult }>(
+      'LIFTOVER_COORDINATE',
+      { direction, chrom, pos, refAllele }
+    );
+    return res.result;
+  }
+
+  public async verifyRefFingerprint(
+    rsid: string,
+    chrom: string,
+    pos: number,
+    refAllele: string,
+    referenceSlice: string,
+    sliceStartPos: number,
+    targetBuild: GenomeAssembly
+  ): Promise<boolean> {
+    const res = await this.callWorker<{ verified: boolean }>(
+      'VERIFY_REF_FINGERPRINT',
+      {
+        rsid,
+        chrom,
+        pos,
+        refAllele,
+        referenceSlice,
+        sliceStartPos,
+        targetBuild,
+      }
+    );
+    return res.verified;
   }
 
   public async computeDensityBins(
@@ -76,88 +249,13 @@ class DecoderWorkerClient {
     end: number,
     numBins: number = 100
   ): Promise<DensityBin[]> {
-    if (!this.worker) {
-      return this.fallbackDensityBins(variants, start, end, numBins);
-    }
-
-    const id = `req_${++this.reqId}`;
-    return new Promise((resolve, reject) => {
-      this.callbacks.set(id, {
-        resolve: (data) => resolve(data.bins),
-        reject,
-      });
-      this.worker!.postMessage({
-        id,
-        type: 'COMPUTE_DENSITY_BINS',
-        payload: { variants, start, end, numBins },
-      });
-    });
-  }
-
-  private fallbackParseVcf(
-    buffer: ArrayBuffer,
-    targetChrom?: string,
-    windowStart?: number,
-    windowEnd?: number
-  ): ParsedVariant[] {
-    const text = new TextDecoder('utf-8').decode(buffer);
-    const lines = text.split('\n');
-    const variants: ParsedVariant[] = [];
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const parts = trimmed.split('\t');
-      if (parts.length < 8) continue;
-      const chrom = parts[0];
-      const pos = parseInt(parts[1], 10);
-      if (isNaN(pos)) continue;
-      if (targetChrom && chrom !== targetChrom) continue;
-      if (windowStart !== undefined && windowEnd !== undefined) {
-        if (pos < windowStart || pos > windowEnd) continue;
-      }
-      variants.push({
-        chrom,
-        pos,
-        id: parts[2],
-        ref: parts[3],
-        alt: parts[4],
-        qual: parseFloat(parts[5]) || 0,
-        filter: parts[6],
-        score: 1.0,
-      });
-    }
-    return variants;
-  }
-
-  private fallbackDensityBins(
-    variants: ParsedVariant[],
-    start: number,
-    end: number,
-    numBins: number
-  ): DensityBin[] {
-    const span = Math.max(end - start, 1);
-    const binSize = span / numBins;
-    const bins: DensityBin[] = [];
-    for (let i = 0; i < numBins; i++) {
-      bins.push({
-        start: Math.floor(start + i * binSize),
-        end: Math.floor(start + (i + 1) * binSize),
-        score: 0,
-        count: 0,
-        pathogenicCount: 0,
-      });
-    }
-    for (const v of variants) {
-      if (v.pos < start || v.pos > end) continue;
-      const binIdx = Math.min(numBins - 1, Math.max(0, Math.floor((v.pos - start) / binSize)));
-      bins[binIdx].count += 1;
-      bins[binIdx].score += v.score || 1.0;
-    }
-    return bins;
+    const res = await this.callWorker<{ bins: DensityBin[] }>(
+      'COMPUTE_DENSITY_BINS',
+      { variants, start, end, numBins }
+    );
+    return res.bins;
   }
 }
 
 export const decoderClient = DecoderWorkerClient.getInstance();
 export type { ParsedVariant, DensityBin };
-

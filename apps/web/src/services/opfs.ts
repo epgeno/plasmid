@@ -20,7 +20,10 @@ export class OPFSManager {
 
   private constructor() {
     // Check saved airgap preference
-    const saved = localStorage.getItem('plasmid_airgap_mode');
+    const saved =
+      typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
+        ? window.localStorage.getItem('plasmid_airgap_mode')
+        : null;
     this.airgapEnabled = saved === 'true';
   }
 
@@ -41,7 +44,9 @@ export class OPFSManager {
 
   public setAirgapped(enabled: boolean): void {
     this.airgapEnabled = enabled;
-    localStorage.setItem('plasmid_airgap_mode', enabled ? 'true' : 'false');
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      window.localStorage.setItem('plasmid_airgap_mode', enabled ? 'true' : 'false');
+    }
   }
 
   private async getRoot(): Promise<FileSystemDirectoryHandle> {

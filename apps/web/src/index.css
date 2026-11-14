@@ -6,9 +6,33 @@
   padding: 0;
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   font-family: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
   background-color: #ffffff;
   color: #0f172a;
   -webkit-font-smoothing: antialiased;
+}
+
+.plasmid-liftover-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 20px;
+  align-items: center;
+}
+
+.plasmid-liftover-grid > * {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .plasmid-liftover-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
 }
