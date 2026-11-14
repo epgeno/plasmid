@@ -1,0 +1,27 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const __wbg_plasmidwasmengine_free: (a: number, b: number) => void;
+export const plasmidwasmengine_decode_annotation_chunk: (a: number, b: number) => [number, number, number];
+export const plasmidwasmengine_decode_fasta_chunk: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const plasmidwasmengine_decode_planned_slice: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
+export const plasmidwasmengine_decode_vcf_chunk: (a: number, b: number) => [number, number, number];
+export const plasmidwasmengine_detect_build: (a: number, b: number) => [number, number, number, number];
+export const plasmidwasmengine_get_assembly_overview: (a: number, b: number) => [number, number, number];
+export const plasmidwasmengine_hash_chunk_hex: (a: number, b: number) => [number, number];
+export const plasmidwasmengine_liftover_hg19_to_hg38: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+export const plasmidwasmengine_liftover_hg38_to_hg19: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+export const plasmidwasmengine_parse_directory_entries: (a: number, b: number) => [number, number, number];
+export const plasmidwasmengine_parse_header: (a: number, b: number) => [number, number, number];
+export const plasmidwasmengine_parse_root_directory: (a: number, b: number) => [number, number, number];
+export const plasmidwasmengine_plan_range_slice: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
+export const plasmidwasmengine_query_root_leaves: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+export const plasmidwasmengine_verify_chunk_hash: (a: number, b: number, c: number, d: number) => number;
+export const plasmidwasmengine_verify_merkle_tree: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+export const plasmidwasmengine_verify_ref_fingerprint: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_externrefs: WebAssembly.Table;
+export const __externref_table_dealloc: (a: number) => void;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_start: () => void;

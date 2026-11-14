@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "build:wasm": "node scripts/build-wasm.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "tsc src/worker.ts --target ES2022 --module ESNext --moduleResolution bundler --types @cloudflare/workers-types --skipLibCheck --outDir .wrangler/test-build && node --test test/worker.test.mjs"
+    "test": "rm -rf .wrangler/test-build && tsc src/worker.ts src/workers/genome-decoder.worker.ts src/services/plasmidContainerClient.ts --target ES2022 --module ESNext --moduleResolution bundler --lib ES2022,DOM --types @cloudflare/workers-types --skipLibCheck --rootDir src --outDir .wrangler/test-build && mkdir -p .wrangler/test-build/wasm && cp src/wasm/plasmid_core.js src/wasm/plasmid_core_bg.wasm .wrangler/test-build/wasm/ && node --test test/worker.test.mjs test/genome-decoder.worker.test.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.16.0",

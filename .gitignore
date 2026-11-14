@@ -11,6 +11,7 @@ dist/
 
 # Local Plasmid caches
 *.plasmid
+!apps/web/public/demo.plasmid
 *.cram
 *.bam
 *.vcf.gz
