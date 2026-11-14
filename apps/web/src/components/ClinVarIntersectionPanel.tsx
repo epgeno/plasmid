@@ -43,8 +43,8 @@ function renderStars(stars: number): React.ReactNode {
           key={idx}
           size={12}
           color={idx < clamped ? '#d97706' : '#cbd5e1'}
-          fill="none"
-          strokeWidth={idx < clamped ? 2.5 : 1.75}
+          fill={idx < clamped ? '#f59e0b' : 'none'}
+          strokeWidth={idx < clamped ? 2 : 1.75}
         />
       ))}
     </span>
