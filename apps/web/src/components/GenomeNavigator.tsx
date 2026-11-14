@@ -249,7 +249,7 @@ export interface GenomeNavigatorProps {
   catalogItems?: CatalogVariantItem[];
   selectedCatalogKey?: string | null;
   onSelectCatalogKey?: (key: string) => void;
-  externalJumpTarget?: { chrom: string; pos: number; seq: number } | null;
+  externalJumpTarget?: { chrom: string; pos: number; endPos?: number; seq: number } | null;
   onExternalJumpConsumed?: (seq: number) => void;
 }
 
@@ -443,7 +443,8 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
 
     const jumpToTarget = async () => {
       let targetPos = externalJumpTarget.pos;
-      if (viewAsm === 'GRCh37') {
+      let targetEndPos = externalJumpTarget.endPos;
+      if (viewAsm === 'GRCh37' && !targetEndPos) {
         try {
           const lifted = await decoderClient.liftoverCoordinate(
             'hg38_to_hg19',
@@ -458,9 +459,15 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
       }
       if (cancelled) return;
       setSelectedChrom(externalJumpTarget.chrom);
-      setWindowStart(Math.max(1, targetPos - 3000));
-      setWindowEnd(targetPos + 3000);
-      setSelectedVariantPos(targetPos);
+      if (targetEndPos && targetEndPos > targetPos) {
+        setWindowStart(Math.max(1, targetPos));
+        setWindowEnd(Math.max(targetPos + 200, targetEndPos));
+        setSelectedVariantPos(Math.round((targetPos + targetEndPos) / 2));
+      } else {
+        setWindowStart(Math.max(1, targetPos - 3000));
+        setWindowEnd(targetPos + 3000);
+        setSelectedVariantPos(targetPos);
+      }
       onExternalJumpConsumedRef.current?.(targetSeq);
     };
     void jumpToTarget();
@@ -964,12 +971,28 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     ctx.lineTo(width - padRight, blockTrackY);
     ctx.stroke();
 
+    const tryClaimSpan = (
+      intervals: [number, number][],
+      left: number,
+      right: number,
+      pad = 8
+    ): boolean => {
+      const a = left - pad;
+      const b = right + pad;
+      for (const [x1, x2] of intervals) {
+        if (a < x2 && b > x1) return false;
+      }
+      intervals.push([a, b]);
+      return true;
+    };
+
     if (matchedEntries.length === 0) {
       ctx.fillStyle = '#94a3b8';
       ctx.font = '400 11px Inter, Pretendard, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(nt.noBlocksOverlap, width / 2, blockTrackY + 4, drawW);
     } else {
+      const occupiedBlockLabels: [number, number][] = [];
       matchedEntries.forEach((entry, i) => {
         const clampedStart = Math.max(windowStart, entry.start_pos);
         const clampedEnd = Math.min(windowEnd, Math.max(entry.start_pos, entry.end_pos));
@@ -988,15 +1011,19 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
         ctx.roundRect(bx, blockTrackY - 9 + rowOffset, bw, 18, 4);
         ctx.fill();
 
-        ctx.fillStyle = '#475569';
         ctx.font = '500 10px ui-monospace, SFMono-Regular, monospace';
-        ctx.textAlign = 'center';
         const tagText = `${entry.entry_type} #${entry.chunk_start} (${entry.payload_bytes}B)`;
+        const tagW = ctx.measureText(tagText).width;
+        const halfW = tagW / 2;
         const safeCenter = Math.min(
-          width - padRight - 65,
-          Math.max(padLeft + 65, bx + bw / 2)
+          width - padRight - halfW - 2,
+          Math.max(padLeft + halfW + 2, bx + bw / 2)
         );
-        ctx.fillText(tagText, safeCenter, blockTrackY + 22, drawW);
+        if (tryClaimSpan(occupiedBlockLabels, safeCenter - halfW, safeCenter + halfW, 8)) {
+          ctx.fillStyle = '#475569';
+          ctx.textAlign = 'center';
+          ctx.fillText(tagText, safeCenter, blockTrackY + 22, drawW);
+        }
       });
     }
 
@@ -1028,7 +1055,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     );
 
     if (loadError) {
-      ctx.fillStyle = '#dc2626';
+      ctx.fillStyle = '#be123c';
       ctx.font = '500 11px Inter, Pretendard, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(`${nt.errorPrefix} ${loadError}`, width / 2, varY + 14, drawW);
@@ -1046,51 +1073,123 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
           drawW
         );
       } else {
-        variants.forEach((v) => {
+        const isDense = variants.length > 14;
+        const getPinColor = (score: number): string => {
+          if (score >= 10) return '#be123c';
+          if (score >= 5) return '#d97706';
+          return '#2563eb';
+        };
+
+        // Pass 1: Draw baseline track + non-selected pins first, selected pin last on top
+        ctx.strokeStyle = '#f1f5f9';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padLeft, varY);
+        ctx.lineTo(width - padRight, varY);
+        ctx.stroke();
+
+        const drawOrder = [...variants].sort((a, b) => {
+          const aSel = selectedVariantPos === a.pos ? 1 : 0;
+          const bSel = selectedVariantPos === b.pos ? 1 : 0;
+          return aSel - bSel || a.score - b.score;
+        });
+
+        drawOrder.forEach((v) => {
           const vx = padLeft + ((v.pos - windowStart) / span) * drawW;
           const isSelected = selectedVariantPos === v.pos;
+          const pinColor = getPinColor(v.score);
 
-          ctx.strokeStyle = '#e2e8f0';
-          ctx.lineWidth = 1;
-          ctx.setLineDash([3, 3]);
-          ctx.beginPath();
-          ctx.moveTo(vx, rulerY);
-          ctx.lineTo(vx, varY + 28);
-          ctx.stroke();
-          ctx.setLineDash([]);
+          if (!isDense || isSelected) {
+            ctx.strokeStyle = isSelected ? '#cbd5e1' : '#e2e8f0';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(vx, rulerY);
+            ctx.lineTo(vx, varY + 24);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
 
-          let pinColor = '#3b82f6';
-          if (v.score >= 10) {
-            pinColor = '#dc2626';
-          } else if (v.score >= 5) {
-            pinColor = '#f59e0b';
+          if (!isDense || isSelected) {
+            ctx.beginPath();
+            ctx.arc(vx, varY, isSelected ? 13 : 10, 0, Math.PI * 2);
+            ctx.fillStyle =
+              pinColor === '#be123c'
+                ? 'rgba(190, 18, 60, 0.14)'
+                : pinColor === '#d97706'
+                  ? 'rgba(217, 119, 6, 0.14)'
+                  : 'rgba(37, 99, 235, 0.14)';
+            ctx.fill();
           }
 
           ctx.beginPath();
-          ctx.arc(vx, varY, isSelected ? 15 : 12, 0, Math.PI * 2);
-          ctx.fillStyle =
-            pinColor === '#dc2626'
-              ? 'rgba(220, 38, 38, 0.16)'
-              : 'rgba(245, 158, 11, 0.16)';
-          ctx.fill();
-
-          ctx.beginPath();
-          ctx.arc(vx, varY, 7, 0, Math.PI * 2);
+          ctx.arc(vx, varY, isSelected ? 7 : isDense ? 4.5 : 6.5, 0, Math.PI * 2);
           ctx.fillStyle = pinColor;
           ctx.fill();
           ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 2;
+          ctx.lineWidth = isDense && !isSelected ? 1.25 : 2;
           ctx.stroke();
+        });
 
-          const safeVx = Math.min(width - padRight - 28, Math.max(padLeft + 28, vx));
-          ctx.fillStyle = '#0f172a';
-          ctx.font = '600 11px ui-monospace, SFMono-Regular, monospace';
-          ctx.textAlign = 'center';
-          ctx.fillText(`${v.ref}>${v.alt}`, safeVx, varY - 16);
+        // Pass 2: Collision-free label placement (Selected variant prioritized first, then highest score)
+        const occupiedTopLabels: [number, number][] = [];
+        const occupiedBottomLabels: [number, number][] = [];
+        const labelPriority = [...variants].sort((a, b) => {
+          const aSel = selectedVariantPos === a.pos ? 1 : 0;
+          const bSel = selectedVariantPos === b.pos ? 1 : 0;
+          return bSel - aSel || b.score - a.score || a.pos - b.pos;
+        });
 
-          ctx.fillStyle = pinColor;
+        labelPriority.forEach((v) => {
+          const vx = padLeft + ((v.pos - windowStart) / span) * drawW;
+          const pinColor = getPinColor(v.score);
+
+          const rawAllele = `${v.ref}>${v.alt}`;
+          const alleleLabel =
+            rawAllele.length > 10
+              ? `${v.ref.slice(0, 3)}${v.ref.length > 3 ? '…' : ''}>${v.alt.slice(0, 3)}${v.alt.length > 3 ? '…' : ''}`
+              : rawAllele;
+
+          ctx.font = '600 10.5px ui-monospace, SFMono-Regular, monospace';
+          const topW = ctx.measureText(alleleLabel).width;
+          const safeTopX = Math.min(
+            width - padRight - topW / 2 - 2,
+            Math.max(padLeft + topW / 2 + 2, vx)
+          );
+          if (
+            tryClaimSpan(
+              occupiedTopLabels,
+              safeTopX - topW / 2,
+              safeTopX + topW / 2,
+              10
+            )
+          ) {
+            ctx.fillStyle = '#0f172a';
+            ctx.textAlign = 'center';
+            ctx.fillText(alleleLabel, safeTopX, varY - 15);
+          }
+
+          const bottomRaw = (v.clinvar || v.id).replace(/_/g, ' ');
+          const bottomLabel =
+            bottomRaw.length > 18 ? `${bottomRaw.slice(0, 16)}…` : bottomRaw;
           ctx.font = '600 10px Inter, Pretendard, sans-serif';
-          ctx.fillText(v.clinvar || v.id, safeVx, varY + 24);
+          const botW = ctx.measureText(bottomLabel).width;
+          const safeBotX = Math.min(
+            width - padRight - botW / 2 - 2,
+            Math.max(padLeft + botW / 2 + 2, vx)
+          );
+          if (
+            tryClaimSpan(
+              occupiedBottomLabels,
+              safeBotX - botW / 2,
+              safeBotX + botW / 2,
+              10
+            )
+          ) {
+            ctx.fillStyle = pinColor;
+            ctx.textAlign = 'center';
+            ctx.fillText(bottomLabel, safeBotX, varY + 23);
+          }
         });
       }
     } else if (densityBins.length === 0) {
@@ -1243,26 +1342,36 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
   return (
     <div
       ref={containerRootRef}
-      style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%', minWidth: 0 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', minWidth: 0 }}
     >
       {/* 1. Header Toolbar */}
       <div
+        className="plasmid-nav-toolbar"
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           flexWrap: 'wrap',
-          gap: '16px',
-          padding: '20px',
+          gap: '12px',
+          padding: '14px 16px',
           backgroundColor: '#ffffff',
           borderRadius: '12px',
           border: '1px solid #e2e8f0',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+          boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)',
         }}
       >
         <div style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#0f172a', margin: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <h2
+              className="cjk-keep"
+              style={{
+                fontSize: '16px',
+                fontWeight: 800,
+                color: '#0f172a',
+                margin: 0,
+                letterSpacing: '-0.02em',
+              }}
+            >
               {nt.title}
             </h2>
             <span
@@ -1280,7 +1389,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
               {windowEnd - windowStart <= 20000 ? nt.level3Badge : nt.level2Badge}
             </span>
           </div>
-          <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>{nt.subtitle}</p>
+          <p className="plasmid-nav-subtitle" style={{ fontSize: '12px', color: '#64748b', margin: '3px 0 0 0' }}>{nt.subtitle}</p>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -1441,29 +1550,21 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
       )}
 
       {/* 2. Dynamically Discovered Indexed Loci */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          flexWrap: 'wrap',
-          padding: '4px 0',
-          maxWidth: '100%',
-        }}
-      >
+      <div className="plasmid-hotspot-strip">
         <span
           style={{
             fontSize: '12px',
             fontWeight: 600,
             color: '#64748b',
-            marginRight: '4px',
+            marginRight: '2px',
             whiteSpace: 'nowrap',
+            flexShrink: 0,
           }}
         >
           {nt.indexedLociLabel}
         </span>
         {indexedChips.length === 0 ? (
-          <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+          <span style={{ fontSize: '12px', color: '#94a3b8', whiteSpace: 'nowrap' }}>
             {isLoading ? nt.readingDirectory : nt.noLeavesLoaded}
           </span>
         ) : (
@@ -1478,11 +1579,12 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
               <button
                 key={chip.key}
                 onClick={() => void handleJumpToChip(chip)}
+                className="tabular-nums"
                 style={{
-                  display: 'flex',
+                  display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '8px',
-                  padding: '6px 12px',
+                  gap: '6px',
+                  padding: '5px 10px',
                   borderRadius: '9999px',
                   fontSize: '12px',
                   fontWeight: isChipActive ? 700 : 500,
@@ -1490,8 +1592,8 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                   backgroundColor: isChipActive ? '#eff6ff' : '#ffffff',
                   color: isChipActive ? '#2563eb' : '#334155',
                   cursor: 'pointer',
-                  maxWidth: '100%',
-                  flexWrap: 'wrap',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
                 }}
               >
                 <span
@@ -1499,10 +1601,11 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                     width: '6px',
                     height: '6px',
                     borderRadius: '50%',
-                    backgroundColor: isPathogenic ? '#dc2626' : '#f59e0b',
+                    backgroundColor: isPathogenic ? '#be123c' : '#d97706',
+                    flexShrink: 0,
                   }}
                 />
-                {chip.label}
+                <span>{chip.label}</span>
                 <span style={{ fontSize: '11px', color: '#94a3b8' }}>
                   ({chip.chrom}:{(chip.pos / 1_000_000).toFixed(2)}M)
                 </span>
@@ -1842,11 +1945,15 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                       style={{
                         fontSize: '11px',
                         fontWeight: 700,
-                        padding: '3px 8px',
-                        borderRadius: '4px',
-                        backgroundColor: inspectedVariant.score >= 10 ? '#fee2e2' : '#fef3c7',
-                        color: inspectedVariant.score >= 10 ? '#dc2626' : '#b45309',
-                        whiteSpace: 'nowrap',
+                        padding: '2px 8px',
+                        borderRadius: '9999px',
+                        backgroundColor: inspectedVariant.score >= 10 ? '#fff1f2' : '#fff7ed',
+                        color: inspectedVariant.score >= 10 ? '#be123c' : '#9a3412',
+                        border:
+                          inspectedVariant.score >= 10
+                            ? '1px solid #fecdd3'
+                            : '1px solid #fed7aa',
+                        wordBreak: 'break-word',
                       }}
                     >
                       {inspectedVariant.clinvar}
@@ -1894,7 +2001,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
                 gap: '12px',
                 marginTop: '16px',
                 paddingTop: '16px',

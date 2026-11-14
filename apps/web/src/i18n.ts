@@ -51,7 +51,41 @@ export interface NavigatorTranslations {
   latestEvents: (count: number) => string
 }
 
+export interface WorkspaceTranslations {
+  navSectionLabel: string
+  collapseRail: string
+  expandRail: string
+  globalSearchPlaceholder: string
+  searchClearAria: string
+  searchJumpCoord: (coord: string) => string
+  searchNoResults: string
+  searchSectionPersonal: string
+  searchSectionCatalog: string
+  mobileVaultExpand: string
+  mobileVaultCollapse: string
+  zeroEgressShort: string
+  bentoTitleVault: string
+  bentoTitlePublic: string
+  bentoRingMatched: string
+  bentoRingIndexed: string
+  bentoRowTotalPersonal: string
+  bentoRowTotalIndexed: string
+  bentoRowClinvarMatch: string
+  bentoRowPackGeometry: string
+  bentoRowActionable: string
+  bentoKpiBuild: string
+  bentoKpiPathogenic: string
+  bentoKpiPharmaco: string
+  bentoKpiSavings: string
+  bentoKpiEgress: string
+  contextActiveVariant: string
+  securityCardTitle: string
+  securityRfcAirgap: string
+  securityRfcPublic: string
+}
+
 export interface TranslationSchema {
+  workspace: WorkspaceTranslations
   disclaimer: {
     bannerTitle: string
     bannerDesc: string
@@ -229,6 +263,38 @@ export interface TranslationSchema {
 
 export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
   ko: {
+    workspace: {
+      navSectionLabel: '워크스페이스',
+      collapseRail: '내비게이션 접기',
+      expandRail: '내비게이션 펼치기',
+      globalSearchPlaceholder: '유전자, rsID, 좌표 검색',
+      searchClearAria: '검색어 지우기',
+      searchJumpCoord: (coord) => `좌표 이동: ${coord}`,
+      searchNoResults: '일치하는 변이 또는 좌표가 없습니다.',
+      searchSectionPersonal: '개인 ClinVar 일치 변이',
+      searchSectionCatalog: '디코딩된 컨테이너 변이',
+      mobileVaultExpand: '볼트 열기',
+      mobileVaultCollapse: '볼트 접기',
+      zeroEgressShort: '외부 전송 0 B',
+      bentoTitleVault: '개인 유전체 임상 교차 요약',
+      bentoTitlePublic: '공공 ClinVar 참조 팩 요약',
+      bentoRingMatched: '임상 일치',
+      bentoRingIndexed: '색인 변이',
+      bentoRowTotalPersonal: '전체 개인 변이',
+      bentoRowTotalIndexed: '전체 색인 변이',
+      bentoRowClinvarMatch: 'ClinVar 일치',
+      bentoRowPackGeometry: 'Zstd 머클 컨테이너',
+      bentoRowActionable: '병원성 · 약물반응',
+      bentoKpiBuild: '기준 빌드',
+      bentoKpiPathogenic: '병원성/유사',
+      bentoKpiPharmaco: '약물·위험인자',
+      bentoKpiSavings: '구간 절감율',
+      bentoKpiEgress: '외부 전송',
+      contextActiveVariant: '선택 변이 컨텍스트',
+      securityCardTitle: '에어갭 격리 및 거버넌스 상태',
+      securityRfcAirgap: 'RFC-0002 OPFS 샌드박스 격리 (0 B 송신)',
+      securityRfcPublic: 'RFC-0003 공공 도메인 청크만 조회',
+    },
     disclaimer: {
       bannerTitle: '학술 연구 및 교육용 도구 안내',
       bannerDesc: '본 플랫폼은 공공 유전체 학술 데이터 뷰어로, 의료 진단이나 치료 결정 용도로 사용될 수 없습니다.',
@@ -293,7 +359,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       cardSlicingSub: (chunks, kbFetched, kbTotal) => `${chunks}개 Zstd 청크 (${kbFetched} / ${kbTotal} KB)`,
       liftedNotice: (count, fromB, toB) =>
         `입력 변이 ${count}건의 ${fromB} 좌표를 내장 UCSC 체인을 통해 ${toB} 좌표계로 자동 변환 후 대립유전자 일치 여부를 검증했습니다.`,
-      searchPlaceholder: '유전자(BRCA2, APOE, HBB), rsID(rs7412), 질환명 검색…',
+      searchPlaceholder: '유전자 · rsID · 질환 검색',
       filterAll: '전체',
       filterPathogenic: '병원성/종양성',
       filterLikelyPathogenic: '유사병원성',
@@ -456,6 +522,38 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
     },
   },
   en: {
+    workspace: {
+      navSectionLabel: 'Workspace',
+      collapseRail: 'Collapse navigation',
+      expandRail: 'Expand navigation',
+      globalSearchPlaceholder: 'Search gene, rsID, chr:pos',
+      searchClearAria: 'Clear search',
+      searchJumpCoord: (coord) => `Jump to ${coord}`,
+      searchNoResults: 'No matching variant or coordinate.',
+      searchSectionPersonal: 'Personal ClinVar Matches',
+      searchSectionCatalog: 'Decoded Container Loci',
+      mobileVaultExpand: 'Vault',
+      mobileVaultCollapse: 'Hide',
+      zeroEgressShort: '0 B Egress',
+      bentoTitleVault: 'Personal Clinical Screening Summary',
+      bentoTitlePublic: 'Public ClinVar Reference Summary',
+      bentoRingMatched: 'Matched',
+      bentoRingIndexed: 'Indexed',
+      bentoRowTotalPersonal: 'Personal Variants',
+      bentoRowTotalIndexed: 'Indexed Variants',
+      bentoRowClinvarMatch: 'ClinVar Matches',
+      bentoRowPackGeometry: 'Zstd Merkle Pack',
+      bentoRowActionable: 'Pathogenic · Pharmaco',
+      bentoKpiBuild: 'Ref Build',
+      bentoKpiPathogenic: 'Pathogenic',
+      bentoKpiPharmaco: 'Drug & Risk',
+      bentoKpiSavings: 'Range Saved',
+      bentoKpiEgress: 'Data Egress',
+      contextActiveVariant: 'Active Variant Context',
+      securityCardTitle: 'Air-Gap & Governance Posture',
+      securityRfcAirgap: 'RFC-0002 OPFS Sandbox (0 B Outbound)',
+      securityRfcPublic: 'RFC-0003 Public Coarse Packs Only',
+    },
     disclaimer: {
       bannerTitle: 'Scientific Research & Educational Tool',
       bannerDesc: 'This platform is an open scientific genomic viewer and is not intended for clinical diagnosis or medical treatment decisions.',
@@ -520,7 +618,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       cardSlicingSub: (chunks, kbFetched, kbTotal) => `${chunks} Zstd chunk(s) (${kbFetched} / ${kbTotal} KB)`,
       liftedNotice: (count, fromB, toB) =>
         `Automatically lifted ${count} personal variant(s) from ${fromB} to ${toB} via the embedded UCSC syntenic chain prior to allele matching.`,
-      searchPlaceholder: 'Filter by gene (BRCA2, APOE, HBB), rsID (rs7412), or condition…',
+      searchPlaceholder: 'Filter gene, rsID, trait',
       filterAll: 'All',
       filterPathogenic: 'Pathogenic/Oncogenic',
       filterLikelyPathogenic: 'Likely Pathogenic',
@@ -683,6 +781,38 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
     },
   },
   zh: {
+    workspace: {
+      navSectionLabel: '工作区',
+      collapseRail: '收起导航栏',
+      expandRail: '展开导航栏',
+      globalSearchPlaceholder: '搜索基因、rsID 或坐标',
+      searchClearAria: '清除搜索',
+      searchJumpCoord: (coord) => `跳转至 ${coord}`,
+      searchNoResults: '未找到匹配的变异或坐标。',
+      searchSectionPersonal: '个人 ClinVar 匹配',
+      searchSectionCatalog: '已解码容器变异',
+      mobileVaultExpand: '保险库',
+      mobileVaultCollapse: '收起',
+      zeroEgressShort: '0 B 外发',
+      bentoTitleVault: '个人基因组临床筛查摘要',
+      bentoTitlePublic: '公共 ClinVar 参考包摘要',
+      bentoRingMatched: '临床匹配',
+      bentoRingIndexed: '索引变异',
+      bentoRowTotalPersonal: '个人变异总数',
+      bentoRowTotalIndexed: '索引变异总数',
+      bentoRowClinvarMatch: 'ClinVar 匹配',
+      bentoRowPackGeometry: 'Zstd 默克尔包',
+      bentoRowActionable: '致病 · 药物反应',
+      bentoKpiBuild: '参考版本',
+      bentoKpiPathogenic: '致病/可能',
+      bentoKpiPharmaco: '药物与风险',
+      bentoKpiSavings: '区间节省率',
+      bentoKpiEgress: '数据外发',
+      contextActiveVariant: '当前变异上下文',
+      securityCardTitle: '空气隔离与数据治理状态',
+      securityRfcAirgap: 'RFC-0002 OPFS 本地隔离（0 B 外发）',
+      securityRfcPublic: 'RFC-0003 仅读取公共粗粒度包',
+    },
     disclaimer: {
       bannerTitle: '学术研究与教育工具说明',
       bannerDesc: '本平台为开源公共基因组学术数据查看器，不作为医疗诊断或治疗决策的依据。',
@@ -747,7 +877,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       cardSlicingSub: (chunks, kbFetched, kbTotal) => `${chunks} 个 Zstd 块 (${kbFetched} / ${kbTotal} KB)`,
       liftedNotice: (count, fromB, toB) =>
         `已通过内置 UCSC 链将 ${count} 项 ${fromB} 个人变异自动转换至 ${toB} 坐标并校验等位基因。`,
-      searchPlaceholder: '搜索基因 (BRCA2, APOE, HBB)、rsID (rs7412) 或疾病名称…',
+      searchPlaceholder: '筛选基因 · rsID · 表型',
       filterAll: '全部',
       filterPathogenic: '致病/致癌',
       filterLikelyPathogenic: '可能致病',
@@ -910,6 +1040,38 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
     },
   },
   ja: {
+    workspace: {
+      navSectionLabel: 'ワークスペース',
+      collapseRail: 'サイドバーを折りたたむ',
+      expandRail: 'サイドバーを展開',
+      globalSearchPlaceholder: '遺伝子・rsID・座標を検索',
+      searchClearAria: '検索をクリア',
+      searchJumpCoord: (coord) => `座標へ移動: ${coord}`,
+      searchNoResults: '一致する変異または座標がありません。',
+      searchSectionPersonal: '個人 ClinVar 一致変異',
+      searchSectionCatalog: 'デコード済み変異',
+      mobileVaultExpand: '保管庫',
+      mobileVaultCollapse: '閉じる',
+      zeroEgressShort: '外部送信 0 B',
+      bentoTitleVault: '個人ゲノム臨床照合サマリー',
+      bentoTitlePublic: '公共 ClinVar 参照パック概要',
+      bentoRingMatched: '臨床一致',
+      bentoRingIndexed: '索引変異',
+      bentoRowTotalPersonal: '個人変異総数',
+      bentoRowTotalIndexed: '索引変異総数',
+      bentoRowClinvarMatch: 'ClinVar 一致',
+      bentoRowPackGeometry: 'Zstd マークルパック',
+      bentoRowActionable: '病原性・薬物応答',
+      bentoKpiBuild: '参照ビルド',
+      bentoKpiPathogenic: '病原性/準',
+      bentoKpiPharmaco: '薬物・リスク',
+      bentoKpiSavings: '範囲削減率',
+      bentoKpiEgress: '外部送信',
+      contextActiveVariant: '選択中の変異コンテキスト',
+      securityCardTitle: 'エアギャップ・データ保護状態',
+      securityRfcAirgap: 'RFC-0002 OPFS 隔離（送信 0 B）',
+      securityRfcPublic: 'RFC-0003 公共パネル単位のみ照会',
+    },
     disclaimer: {
       bannerTitle: '学術研究および教育用ツールの案内',
       bannerDesc: '本プラットフォームはオープンな公共ゲノムデータビューアであり、医療診断や治療決定を目的としたものではありません。',
@@ -974,7 +1136,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       cardSlicingSub: (chunks, kbFetched, kbTotal) => `${chunks} Zstd チャンク (${kbFetched} / ${kbTotal} KB)`,
       liftedNotice: (count, fromB, toB) =>
         `内蔵 UCSC チェーンにより ${count} 件の個人変異を ${fromB} から ${toB} へ自動座標変換した上でアレル一致を検証しました。`,
-      searchPlaceholder: '遺伝子 (BRCA2, APOE, HBB)、rsID (rs7412)、疾患名で検索…',
+      searchPlaceholder: '遺伝子・rsID・疾患で絞込',
       filterAll: 'すべて',
       filterPathogenic: '病原性/腫瘍性',
       filterLikelyPathogenic: '準病原性',
