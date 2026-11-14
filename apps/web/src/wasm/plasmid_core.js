@@ -215,6 +215,20 @@ export class PlasmidWasmEngine {
         return takeFromExternrefTable0(ret[0]);
     }
     /**
+     * Parses and cryptographically validates a local .plasmid container buffer stored in OPFS.
+     * @param {Uint8Array} container_bytes
+     * @returns {any}
+     */
+    static parse_local_plasmid(container_bytes) {
+        const ptr0 = passArray8ToWasm0(container_bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.plasmidwasmengine_parse_local_plasmid(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * Parses all leaf directory pointers from a hierarchical Root Directory buffer.
      * @param {Uint8Array} root_dir_bytes
      * @returns {any}
@@ -223,6 +237,23 @@ export class PlasmidWasmEngine {
         const ptr0 = passArray8ToWasm0(root_dir_bytes, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.plasmidwasmengine_parse_root_directory(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * Parses an arbitrary local .vcf/.txt byte buffer into a sorted variant table, chromosome coordinate index, and 1Mb PyramidIndex.
+     * @param {Uint8Array} vcf_bytes
+     * @param {string} assembly_hint
+     * @returns {any}
+     */
+    static parse_vcf_dataset(vcf_bytes, assembly_hint) {
+        const ptr0 = passArray8ToWasm0(vcf_bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(assembly_hint, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.plasmidwasmengine_parse_vcf_dataset(ptr0, len0, ptr1, len1);
         if (ret[2]) {
             throw takeFromExternrefTable0(ret[1]);
         }

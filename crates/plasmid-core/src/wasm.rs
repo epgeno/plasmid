@@ -1,20 +1,21 @@
 use crate::chrom::{chrom_to_id, id_to_chrom};
-use crate::decoder::{GenomicCoordinator, UnifiedGenomicSlice};
+use crate::decoder::{GenomicCoordinator, UnifiedGenomicSlice, VcfDecoder, VcfVariantRecord};
 use crate::error::{PlasmidCoreError, Result};
+use crate::liftover::{CoordinateGuard, GenomeBuild};
+use crate::pyramid::PyramidIndex;
 use crate::slicing::{ByteRange, RangePlanner, SlicingPlan, coalesce_byte_ranges};
 use plasmid_format::{
-    FLAG_HIERARCHICAL_INDEX, MerkleTree, PlasmidDirectory, PlasmidHeader, PlasmidIndexEntry,
-    PlasmidLeafPointer, PlasmidRootDirectory, hash_leaf,
+    EntryType, FLAG_HIERARCHICAL_INDEX, HEADER_SIZE, MerkleTree, PlasmidDirectory, PlasmidHeader,
+    PlasmidIndexEntry, PlasmidLeafPointer, PlasmidReader, PlasmidRootDirectory, hash_leaf,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Cursor;
 
 #[cfg(feature = "wasm")]
-use crate::decoder::{AnnotationDecoder, FastaDecoder, VcfDecoder};
+use crate::decoder::{AnnotationDecoder, FastaDecoder};
 #[cfg(feature = "wasm")]
-use crate::liftover::{CoordinateGuard, GenomeBuild, LiftoverEngine};
-#[cfg(feature = "wasm")]
-use crate::pyramid::PyramidIndex;
+use crate::liftover::LiftoverEngine;
 #[cfg(feature = "wasm")]
 use wasm_bindgen::prelude::*;
 
@@ -98,6 +99,40 @@ pub struct WasmMerkleVerification {
     pub total_chunks: usize,
     pub verified_bytes: usize,
     pub chunk_hashes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WasmChromCoordinateIndex {
+    pub chrom_id: u16,
+    pub chrom_name: String,
+    pub min_pos: u64,
+    pub max_pos: u64,
+    pub variant_count: u32,
+    pub pathogenic_count: u32,
+    pub start_index: usize,
+    pub end_index: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WasmVcfDataset {
+    pub reference_build: String,
+    pub byte_length: usize,
+    pub sha256_hex: String,
+    pub pyramid: PyramidIndex,
+    pub chrom_index: Vec<WasmChromCoordinateIndex>,
+    pub variants: Vec<VcfVariantRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WasmLocalPlasmidDataset {
+    pub header: WasmHeaderInfo,
+    pub metadata_json: String,
+    pub merkle: WasmMerkleVerification,
+    pub pyramid: PyramidIndex,
+    pub chrom_index: Vec<WasmChromCoordinateIndex>,
+    pub leaves: Vec<WasmLeafPointerInfo>,
+    pub entries: Vec<WasmIndexEntryInfo>,
+    pub variants: Vec<VcfVariantRecord>,
 }
 
 pub fn hex_encode(bytes: &[u8]) -> String {
@@ -318,6 +353,255 @@ pub fn verify_merkle_tree_dto(
     })
 }
 
+fn infer_vcf_reference_build(
+    vcf_text: &str,
+    variants: &[VcfVariantRecord],
+    assembly_hint: &str,
+) -> String {
+    for raw_line in vcf_text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if !line.starts_with('#') {
+            break;
+        }
+        let lower = line.to_ascii_lowercase();
+        if lower.starts_with("##reference=") || lower.starts_with("##assembly=") {
+            if lower.contains("grch37") || lower.contains("hg19") || lower.contains("b37") {
+                return "GRCh37".to_string();
+            }
+            if lower.contains("grch38") || lower.contains("hg38") {
+                return "GRCh38".to_string();
+            }
+        } else if lower.starts_with("##contig=") {
+            if lower.contains("length=249250621") {
+                return "GRCh37".to_string();
+            }
+            if lower.contains("length=248956422") {
+                return "GRCh38".to_string();
+            }
+        } else if lower.contains("grch37")
+            || lower.contains("hg19")
+            || lower.contains("build 37")
+            || lower.contains("build37")
+        {
+            return "GRCh37".to_string();
+        } else if lower.contains("grch38")
+            || lower.contains("hg38")
+            || lower.contains("build 38")
+            || lower.contains("build38")
+        {
+            return "GRCh38".to_string();
+        }
+    }
+
+    let coord_pairs: Vec<(String, u64)> = variants
+        .iter()
+        .take(512)
+        .map(|v| (v.chrom.clone(), v.pos))
+        .collect();
+    if let Some(detected) = CoordinateGuard::detect_build(&coord_pairs) {
+        return match detected {
+            GenomeBuild::GRCh37 => "GRCh37".to_string(),
+            GenomeBuild::GRCh38 => "GRCh38".to_string(),
+        };
+    }
+
+    let hint_upper = assembly_hint.to_ascii_uppercase();
+    if hint_upper.contains("37") || hint_upper.contains("19") {
+        "GRCh37".to_string()
+    } else {
+        "GRCh38".to_string()
+    }
+}
+
+fn build_chrom_coordinate_index(
+    variants: &mut [VcfVariantRecord],
+) -> Vec<WasmChromCoordinateIndex> {
+    variants.sort_by(|a, b| {
+        let cid_a = chrom_to_id(&a.chrom).unwrap_or(u16::MAX);
+        let cid_b = chrom_to_id(&b.chrom).unwrap_or(u16::MAX);
+        cid_a
+            .cmp(&cid_b)
+            .then_with(|| a.chrom.cmp(&b.chrom))
+            .then_with(|| a.pos.cmp(&b.pos))
+    });
+
+    let mut index: Vec<WasmChromCoordinateIndex> = Vec::new();
+    for (idx, v) in variants.iter().enumerate() {
+        let cid = chrom_to_id(&v.chrom).unwrap_or(0);
+        let var_end = v.pos + (v.reference.len().max(1) as u64) - 1;
+        let is_path = u32::from(v.is_pathogenic());
+
+        if let Some(last) = index.last_mut()
+            && last.chrom_name == v.chrom
+        {
+            last.min_pos = last.min_pos.min(v.pos);
+            last.max_pos = last.max_pos.max(var_end);
+            last.variant_count += 1;
+            last.pathogenic_count += is_path;
+            last.end_index = idx;
+            continue;
+        }
+
+        index.push(WasmChromCoordinateIndex {
+            chrom_id: cid,
+            chrom_name: v.chrom.clone(),
+            min_pos: v.pos,
+            max_pos: var_end,
+            variant_count: 1,
+            pathogenic_count: is_path,
+            start_index: idx,
+            end_index: idx,
+        });
+    }
+
+    index
+}
+
+pub fn parse_vcf_dataset_dto(vcf_bytes: &[u8], assembly_hint: &str) -> Result<WasmVcfDataset> {
+    if vcf_bytes.is_empty() {
+        return Err(PlasmidCoreError::VcfParse(
+            "VCF file buffer is empty".to_string(),
+        ));
+    }
+
+    let trimmed = match vcf_bytes.iter().rposition(|&b| b != 0) {
+        Some(last) => &vcf_bytes[..=last],
+        None => {
+            return Err(PlasmidCoreError::VcfParse(
+                "VCF file buffer contains only null bytes".to_string(),
+            ));
+        }
+    };
+
+    let text = std::str::from_utf8(trimmed)
+        .map_err(|_| PlasmidCoreError::VcfParse("Invalid UTF-8 in VCF file".to_string()))?;
+
+    let has_vcf_header = text.lines().any(|l| {
+        let t = l.trim();
+        t.starts_with("##fileformat=VCF") || t.starts_with("#CHROM\t") || t.starts_with("# rsid\t")
+    });
+
+    let mut variants = VcfDecoder::decode_slice(trimmed)?;
+    if !has_vcf_header && variants.is_empty() {
+        return Err(PlasmidCoreError::VcfParse(
+            "Input contains no valid VCF header or variant records".to_string(),
+        ));
+    }
+
+    let reference_build = infer_vcf_reference_build(text, &variants, assembly_hint);
+    let chrom_index = build_chrom_coordinate_index(&mut variants);
+
+    let mut pyramid = PyramidIndex::new(&reference_build);
+    for v in &variants {
+        pyramid.ingest_variant(&v.chrom, v);
+    }
+
+    Ok(WasmVcfDataset {
+        reference_build,
+        byte_length: vcf_bytes.len(),
+        sha256_hex: hex_encode(&hash_leaf(vcf_bytes)),
+        pyramid,
+        chrom_index,
+        variants,
+    })
+}
+
+pub fn parse_local_plasmid_dto(container_bytes: &[u8]) -> Result<WasmLocalPlasmidDataset> {
+    if container_bytes.len() < HEADER_SIZE {
+        return Err(PlasmidCoreError::Serialization(format!(
+            "Buffer length ({}) is shorter than 128-byte .plasmid header",
+            container_bytes.len()
+        )));
+    }
+
+    let header = parse_header_dto(&container_bytes[..HEADER_SIZE])?;
+    let payload_start = header.payload_offset as usize;
+    let payload_end = payload_start.saturating_add(header.total_payload_bytes as usize);
+    if payload_end > container_bytes.len() {
+        return Err(PlasmidCoreError::Serialization(format!(
+            "Container truncated: expected payload end at byte {}, found {} bytes",
+            payload_end,
+            container_bytes.len()
+        )));
+    }
+
+    let merkle = if header.total_payload_bytes == 0 {
+        let empty_tree = MerkleTree::from_leaves(Vec::new());
+        let calc = hex_encode(&empty_tree.root());
+        WasmMerkleVerification {
+            verified: calc.eq_ignore_ascii_case(&header.root_hash_hex),
+            expected_root_hex: header.root_hash_hex.clone(),
+            calculated_root_hex: calc,
+            total_chunks: 0,
+            verified_bytes: 0,
+            chunk_hashes: Vec::new(),
+        }
+    } else {
+        verify_merkle_tree_dto(
+            &container_bytes[payload_start..payload_end],
+            header.chunk_size,
+            &header.root_hash_hex,
+        )?
+    };
+
+    let mut reader = PlasmidReader::new(Cursor::new(container_bytes))?;
+    let metadata_json = reader.metadata_json.clone();
+    let leaves: Vec<WasmLeafPointerInfo> = reader
+        .root_directory
+        .as_ref()
+        .map(|r| r.leaves.iter().copied().map(Into::into).collect())
+        .unwrap_or_default();
+
+    let raw_entries = reader.read_all_entries()?;
+    let mut variants = Vec::new();
+    let mut entries = Vec::with_capacity(raw_entries.len());
+
+    for entry in raw_entries {
+        if entry.entry_type == EntryType::VcfVariant {
+            let payload = reader.read_entry_payload(&entry)?;
+            let mut decoded = VcfDecoder::decode_slice(&payload)?;
+            variants.append(&mut decoded);
+        }
+        entries.push(WasmIndexEntryInfo {
+            chrom_id: entry.chrom_id,
+            chrom_name: id_to_chrom(entry.chrom_id),
+            entry,
+        });
+    }
+
+    let chrom_index = build_chrom_coordinate_index(&mut variants);
+
+    let embedded_pyramid = serde_json::from_str::<serde_json::Value>(&metadata_json)
+        .ok()
+        .and_then(|v| v.get("pyramid").cloned())
+        .and_then(|p| serde_json::from_value::<PyramidIndex>(p).ok());
+
+    let pyramid = match embedded_pyramid {
+        Some(pyr) => pyr,
+        None => {
+            let mut pyr = PyramidIndex::new(&header.reference_build);
+            for v in &variants {
+                pyr.ingest_variant(&v.chrom, v);
+            }
+            pyr
+        }
+    };
+
+    Ok(WasmLocalPlasmidDataset {
+        header,
+        metadata_json,
+        merkle,
+        pyramid,
+        chrom_index,
+        leaves,
+        entries,
+        variants,
+    })
+}
+
 #[cfg(feature = "wasm")]
 fn to_js_json<T: Serialize>(value: &T) -> std::result::Result<JsValue, JsValue> {
     value
@@ -429,6 +713,25 @@ impl PlasmidWasmEngine {
             .map_err(|e| JsValue::from_str(&format!("VCF decode error: {e}")))?;
 
         to_js_json(&variants)
+    }
+
+    /// Parses an arbitrary local .vcf/.txt byte buffer into a sorted variant table, chromosome coordinate index, and 1Mb PyramidIndex.
+    #[wasm_bindgen]
+    pub fn parse_vcf_dataset(
+        vcf_bytes: &[u8],
+        assembly_hint: &str,
+    ) -> std::result::Result<JsValue, JsValue> {
+        let dataset = parse_vcf_dataset_dto(vcf_bytes, assembly_hint)
+            .map_err(|e| JsValue::from_str(&format!("VCF dataset parse error: {e}")))?;
+        to_js_json(&dataset)
+    }
+
+    /// Parses and cryptographically validates a local .plasmid container buffer stored in OPFS.
+    #[wasm_bindgen]
+    pub fn parse_local_plasmid(container_bytes: &[u8]) -> std::result::Result<JsValue, JsValue> {
+        let dataset = parse_local_plasmid_dto(container_bytes)
+            .map_err(|e| JsValue::from_str(&format!("Local .plasmid parse error: {e}")))?;
+        to_js_json(&dataset)
     }
 
     /// Decodes ClinVar/Wiki markdown annotations and ACMG rules from an annotation chunk.
@@ -660,5 +963,99 @@ mod tests {
         )
         .unwrap();
         assert!(!bad_merkle.verified);
+    }
+
+    #[test]
+    fn test_parse_vcf_dataset_dto_and_rejection() {
+        let custom_vcf = concat!(
+            "##fileformat=VCFv4.3\n",
+            "##reference=GRCh37\n",
+            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE1\n",
+            "12\t112241766\trs671\tG\tA\t99\tPASS\tGENE=ALDH2;CLNSIG=Risk_factor\tGT:DP\t0/1:51\n",
+            "6\t26093141\trs1800562\tG\tA\t98\tPASS\tGENE=HFE;CLNSIG=Pathogenic;AA=p.Cys282Tyr\tGT:DP\t1/1:64\n",
+            "chr6\t26091179\trs1799945\tC\tG\t92\tPASS\tGENE=HFE;CLNSIG=Uncertain_significance\tGT:DP\t0/1:44\n"
+        );
+
+        let dataset = parse_vcf_dataset_dto(custom_vcf.as_bytes(), "GRCh38").unwrap();
+        assert_eq!(dataset.reference_build, "GRCh37");
+        assert_eq!(dataset.byte_length, custom_vcf.len());
+        assert_eq!(dataset.sha256_hex.len(), 64);
+        assert_eq!(dataset.variants.len(), 3);
+        assert_eq!(dataset.pyramid.total_variants, 3);
+        assert_eq!(dataset.pyramid.total_pathogenic, 1);
+
+        // Sorted by chrom_id (chr6 before chr12) and pos ascending
+        assert_eq!(dataset.chrom_index.len(), 2);
+        assert_eq!(dataset.chrom_index[0].chrom_name, "chr6");
+        assert_eq!(dataset.chrom_index[0].min_pos, 26091179);
+        assert_eq!(dataset.chrom_index[0].max_pos, 26093141);
+        assert_eq!(dataset.chrom_index[0].variant_count, 2);
+        assert_eq!(dataset.chrom_index[0].pathogenic_count, 1);
+        assert_eq!(dataset.chrom_index[0].start_index, 0);
+        assert_eq!(dataset.chrom_index[0].end_index, 1);
+
+        assert_eq!(dataset.chrom_index[1].chrom_name, "chr12");
+        assert_eq!(dataset.chrom_index[1].variant_count, 1);
+        assert_eq!(dataset.chrom_index[1].start_index, 2);
+        assert_eq!(dataset.chrom_index[1].end_index, 2);
+
+        // Garbage non-VCF text must fail closed
+        assert!(parse_vcf_dataset_dto(b"not a vcf file at all", "GRCh38").is_err());
+        assert!(parse_vcf_dataset_dto(b"", "GRCh38").is_err());
+        assert!(
+            parse_vcf_dataset_dto("chr7\t100\trs1\t유전자\t변이\n".as_bytes(), "GRCh38").is_err()
+        );
+
+        // 23andMe .txt build 37 detection (via comment header and via coordinate guard)
+        let raw_23andme = concat!(
+            "# This data file generated by 23andMe, reference human assembly build 37\n",
+            "# rsid\tchromosome\tposition\tgenotype\n",
+            "rs334\t11\t5248232\tTA\n",
+            "rs113488022\t7\t140453136\tAT\n"
+        );
+        let parsed_23 = parse_vcf_dataset_dto(raw_23andme.as_bytes(), "GRCh38").unwrap();
+        assert_eq!(parsed_23.reference_build, "GRCh37");
+        assert_eq!(parsed_23.variants.len(), 2);
+
+        let raw_23_no_comment = concat!(
+            "# rsid\tchromosome\tposition\tgenotype\n",
+            "rs334\t11\t5248232\tTA\n",
+            "rs113488022\t7\t140453136\tAT\n"
+        );
+        let parsed_23_auto = parse_vcf_dataset_dto(raw_23_no_comment.as_bytes(), "GRCh38").unwrap();
+        assert_eq!(parsed_23_auto.reference_build, "GRCh37");
+    }
+
+    #[test]
+    fn test_parse_local_plasmid_dto_hierarchical_and_flat() {
+        let mut builder = PlasmidBuilder::new("GRCh38");
+        builder.set_metadata(r#"{"license":"Private Vault"}"#);
+        builder.add_item(
+            1,
+            EntryType::VcfVariant,
+            55051215,
+            55051215,
+            b"chr1\t55051215\trs28362286\tC\tA\t99\tPASS\tGENE=PCSK9;CLNSIG=Pathogenic\n".to_vec(),
+        );
+        builder.add_item(
+            12,
+            EntryType::VcfVariant,
+            111803962,
+            111803962,
+            b"chr12\t111803962\trs671\tG\tA\t100\tPASS\tGENE=ALDH2;CLNSIG=Risk_factor\n".to_vec(),
+        );
+
+        let mut container = Vec::new();
+        builder.build_hierarchical(&mut container, 1).unwrap();
+
+        let parsed = parse_local_plasmid_dto(&container).unwrap();
+        assert!(parsed.header.is_hierarchical);
+        assert!(parsed.merkle.verified);
+        assert_eq!(parsed.variants.len(), 2);
+        assert_eq!(parsed.pyramid.total_variants, 2);
+        assert_eq!(parsed.pyramid.total_pathogenic, 1);
+        assert_eq!(parsed.chrom_index.len(), 2);
+        assert_eq!(parsed.chrom_index[0].chrom_name, "chr1");
+        assert_eq!(parsed.chrom_index[1].chrom_name, "chr12");
     }
 }

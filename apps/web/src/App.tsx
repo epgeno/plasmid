@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Cpu,
   Layers,
@@ -13,6 +13,9 @@ import {
   Lock,
   Compass,
   AlertTriangle,
+  Upload,
+  HardDrive,
+  Trash2,
 } from 'lucide-react'
 import { SupportedLanguage, TRANSLATIONS } from './i18n'
 import { GenomeNavigator } from './components/GenomeNavigator'
@@ -22,9 +25,17 @@ import {
   type ContainerSession,
 } from './services/plasmidContainerClient'
 import { decoderClient } from './services/decoderClient'
-import { opfs } from './services/opfs'
+import {
+  detectVaultFileKind,
+  opfs,
+  sanitizeVaultFilename,
+  VAULT_DIR_NAME,
+  type OPFSQuota,
+  type VaultFileEntry,
+} from './services/opfs'
 import type {
   CatalogVariantItem,
+  DataSourceMode,
   LiftoverResult,
   WasmMerkleVerification,
 } from './types/plasmid'
@@ -35,10 +46,25 @@ function pickDifferentBase(base: string): string {
 }
 
 export default function App() {
+  const initialVaultPath = opfs.getActiveVaultPath()
   const [lang, setLang] = useState<SupportedLanguage>('ko')
   const [activeTab, setActiveTab] = useState<
     'navigator' | 'stream' | 'liftover' | 'wiki' | 'swarm' | 'governance'
   >('navigator')
+
+  const [sourceMode, setSourceMode] = useState<DataSourceMode>(
+    initialVaultPath ? 'vault' : 'public'
+  )
+  const [activeOpfsFilename, setActiveOpfsFilename] = useState<string>(
+    initialVaultPath || DEFAULT_OPFS_FILENAME
+  )
+  const [vaultFiles, setVaultFiles] = useState<VaultFileEntry[]>([])
+  const [opfsQuota, setOpfsQuota] = useState<OPFSQuota | null>(null)
+  const [isDraggingVault, setIsDraggingVault] = useState<boolean>(false)
+  const [vaultImporting, setVaultImporting] = useState<boolean>(false)
+  const [vaultError, setVaultError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const sourceReqSeqRef = useRef<number>(0)
 
   const [session, setSession] = useState<ContainerSession | null>(null)
   const [catalogItems, setCatalogItems] = useState<CatalogVariantItem[]>([])
@@ -58,6 +84,53 @@ export default function App() {
 
   const t = TRANSLATIONS[lang]
 
+  const refreshVaultMetadata = useCallback(async () => {
+    const [files, quota] = await Promise.all([opfs.listVaultFiles(), opfs.getQuota()])
+    setVaultFiles(files)
+    setOpfsQuota(quota)
+    return files
+  }, [])
+
+  const activateDataSource = useCallback(
+    async (nextMode: DataSourceMode, nextOpfsPath: string) => {
+      const reqSeq = ++sourceReqSeqRef.current
+      setCatalogLoading(true)
+      setCatalogError(null)
+      setMerkleResult(null)
+      setMerkleElapsedMs(null)
+      setVerifyError(null)
+
+      try {
+        const airgapped =
+          nextMode === 'vault' ? true : await opfs.hasFile(DEFAULT_OPFS_FILENAME)
+        const targetFile = nextMode === 'vault' ? nextOpfsPath : DEFAULT_OPFS_FILENAME
+
+        const { session: loadedSession, items } =
+          await plasmidContainerClient.loadCatalogVariants({
+            sourceMode: nextMode,
+            airgapped,
+            opfsFilename: targetFile,
+          })
+
+        if (reqSeq !== sourceReqSeqRef.current) return
+        setSourceMode(nextMode)
+        setActiveOpfsFilename(targetFile)
+        opfs.setActiveVaultPath(nextMode === 'vault' ? targetFile : null)
+        setSession(loadedSession)
+        setCatalogItems(items)
+        setSelectedKey(items[0]?.key ?? null)
+      } catch (err: unknown) {
+        if (reqSeq !== sourceReqSeqRef.current) return
+        setCatalogError(err instanceof Error ? err.message : String(err))
+      } finally {
+        if (reqSeq === sourceReqSeqRef.current) {
+          setCatalogLoading(false)
+        }
+      }
+    },
+    []
+  )
+
   // Synchronize <html lang="..."> with active UI language
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -65,41 +138,144 @@ export default function App() {
     }
   }, [lang])
 
-  // Load real .plasmid container header, index, metadata, and decoded VCF catalog on mount
+  // Load saved OPFS vault inventory and active dataset on mount
   useEffect(() => {
     let cancelled = false
 
-    const loadContainer = async () => {
+    const bootstrap = async () => {
+      const reqSeq = ++sourceReqSeqRef.current
       setCatalogLoading(true)
       setCatalogError(null)
       try {
-        const hasLocalOpfs = await opfs.hasFile(DEFAULT_OPFS_FILENAME)
+        const files = await refreshVaultMetadata()
+        const savedPath = opfs.getActiveVaultPath()
+        const validSavedVault =
+          savedPath && files.some((f) => f.opfsPath === savedPath) ? savedPath : null
+
+        if (savedPath && !validSavedVault) {
+          opfs.setActiveVaultPath(null)
+        }
+
+        const mode: DataSourceMode = validSavedVault ? 'vault' : 'public'
+        const targetFile = validSavedVault ?? DEFAULT_OPFS_FILENAME
+        const airgapped =
+          mode === 'vault' ? true : await opfs.hasFile(DEFAULT_OPFS_FILENAME)
+
         const { session: loadedSession, items } =
           await plasmidContainerClient.loadCatalogVariants({
-            airgapped: hasLocalOpfs,
+            sourceMode: mode,
+            airgapped,
+            opfsFilename: targetFile,
           })
 
-        if (cancelled) return
+        if (cancelled || reqSeq !== sourceReqSeqRef.current) return
+        setSourceMode(mode)
+        setActiveOpfsFilename(targetFile)
         setSession(loadedSession)
         setCatalogItems(items)
         if (items.length > 0) {
           setSelectedKey((prev) =>
             prev && items.some((it) => it.key === prev) ? prev : items[0].key
           )
+        } else {
+          setSelectedKey(null)
         }
       } catch (err: unknown) {
-        if (cancelled) return
+        if (cancelled || reqSeq !== sourceReqSeqRef.current) return
         setCatalogError(err instanceof Error ? err.message : String(err))
       } finally {
-        if (!cancelled) setCatalogLoading(false)
+        if (!cancelled && reqSeq === sourceReqSeqRef.current) setCatalogLoading(false)
       }
     }
 
-    void loadContainer()
+    void bootstrap()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [refreshVaultMetadata])
+
+  const handleImportVaultFile = async (file: File) => {
+    const reqSeq = ++sourceReqSeqRef.current
+    setVaultImporting(true)
+    setVaultError(null)
+
+    try {
+      const arrayBuf = await file.arrayBuffer()
+      const bytes = new Uint8Array(arrayBuf)
+      if (bytes.byteLength === 0) {
+        throw new Error('Selected genomic file is empty (0 bytes)')
+      }
+
+      const sanitizedName = sanitizeVaultFilename(file.name)
+      const kind = detectVaultFileKind(sanitizedName, bytes)
+
+      // Validate in local WASM BEFORE writing to OPFS so invalid uploads never overwrite existing vault files
+      if (kind === 'vcf') {
+        await decoderClient.parseVcfDataset(bytes, 'GRCh38')
+      } else {
+        const parsedPlasmid = await decoderClient.parseLocalPlasmid(bytes)
+        if (!parsedPlasmid.merkle.verified) {
+          throw new Error(
+            `Merkle root integrity check failed for "${sanitizedName}": expected ${parsedPlasmid.merkle.expected_root_hex}, calculated ${parsedPlasmid.merkle.calculated_root_hex}`
+          )
+        }
+      }
+
+      const candidatePath = `${VAULT_DIR_NAME}/${sanitizedName}`
+      plasmidContainerClient.evictFile(candidatePath)
+      const savedEntry = await opfs.saveVaultFile(file.name, bytes)
+
+      const { session: loadedSession, items } =
+        await plasmidContainerClient.loadCatalogVariants({
+          sourceMode: 'vault',
+          airgapped: true,
+          opfsFilename: savedEntry.opfsPath,
+        })
+
+      await refreshVaultMetadata()
+      if (reqSeq !== sourceReqSeqRef.current) return
+
+      opfs.setActiveVaultPath(savedEntry.opfsPath)
+      setSourceMode('vault')
+      setActiveOpfsFilename(savedEntry.opfsPath)
+      setSession(loadedSession)
+      setCatalogItems(items)
+      setSelectedKey(items[0]?.key ?? null)
+      setCatalogError(null)
+      setMerkleResult(null)
+      setMerkleElapsedMs(null)
+      setVerifyError(null)
+    } catch (err: unknown) {
+      await refreshVaultMetadata()
+      if (reqSeq === sourceReqSeqRef.current) {
+        setVaultError(err instanceof Error ? err.message : String(err))
+      }
+    } finally {
+      setVaultImporting(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const handleDeleteVaultFile = async (entry: VaultFileEntry) => {
+    setVaultError(null)
+    try {
+      await opfs.deleteVaultFile(entry.name)
+      plasmidContainerClient.evictFile(entry.opfsPath)
+      const remaining = await refreshVaultMetadata()
+
+      if (sourceMode === 'vault' && activeOpfsFilename === entry.opfsPath) {
+        if (remaining.length > 0) {
+          await activateDataSource('vault', remaining[0].opfsPath)
+        } else {
+          await activateDataSource('public', DEFAULT_OPFS_FILENAME)
+        }
+      }
+    } catch (err: unknown) {
+      setVaultError(err instanceof Error ? err.message : String(err))
+    }
+  }
 
   const current: CatalogVariantItem | null = useMemo(() => {
     if (catalogItems.length === 0) return null
@@ -120,10 +296,13 @@ export default function App() {
     }
 
     let cancelled = false
+    const containerAsm = session?.containerAssembly ?? 'GRCh38'
+    const liftDirection = containerAsm === 'GRCh37' ? 'hg19_to_hg38' : 'hg38_to_hg19'
+
     const runWasmLiftover = async () => {
       try {
         const res = await decoderClient.liftoverCoordinate(
-          'hg38_to_hg19',
+          liftDirection,
           current.variant.chrom,
           current.variant.pos,
           current.variant.ref
@@ -152,7 +331,7 @@ export default function App() {
           refAllele,
           refWindow,
           current.variant.pos,
-          'GRCh38'
+          containerAsm
         )
         if (!cancelled) setGuardError(null)
       } catch (err: unknown) {
@@ -166,16 +345,19 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [current, simulateAdversarialDrift])
+  }, [current, session?.containerAssembly, simulateAdversarialDrift])
 
   const handleVerifyMerkle = async () => {
     setVerifying(true)
     setVerifyError(null)
     try {
-      const hasLocalOpfs = await opfs.hasFile(DEFAULT_OPFS_FILENAME)
+      const airgapped =
+        sourceMode === 'vault' ? true : await opfs.hasFile(DEFAULT_OPFS_FILENAME)
       const { verification, elapsedMs, session: verifiedSession } =
         await plasmidContainerClient.verifyContainerMerkle({
-          airgapped: hasLocalOpfs,
+          sourceMode,
+          airgapped,
+          opfsFilename: activeOpfsFilename,
         })
       setSession(verifiedSession)
       setMerkleResult(verification)
@@ -389,6 +571,386 @@ export default function App() {
 
       {/* Main Content Area */}
       <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '16px' }}>
+        {/* Local Personal Genome OPFS Air-Gap Vault & Data Source Switcher */}
+        <section
+          data-testid="local-vault-panel"
+          style={{
+            marginBottom: '16px',
+            padding: '16px',
+            backgroundColor: sourceMode === 'vault' ? '#f0fdf4' : '#f8fafc',
+            border: sourceMode === 'vault' ? '1px solid #86efac' : '1px solid #e2e8f0',
+            borderRadius: '10px',
+            minWidth: 0,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              flexWrap: 'wrap',
+              gap: '12px',
+              marginBottom: '12px',
+            }}
+          >
+            <div style={{ minWidth: 0, flex: '1 1 260px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <HardDrive
+                  size={16}
+                  color={sourceMode === 'vault' ? '#16a34a' : '#2563eb'}
+                  style={{ flexShrink: 0 }}
+                />
+                <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>
+                  {t.vault.title}
+                </span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '9999px',
+                    backgroundColor: '#dcfce7',
+                    color: '#166534',
+                    border: '1px solid #86efac',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {t.vault.badgeZeroNetwork}
+                </span>
+              </div>
+              <p
+                style={{
+                  margin: '4px 0 0 0',
+                  fontSize: '12px',
+                  color: '#475569',
+                  lineHeight: 1.5,
+                }}
+              >
+                {t.vault.desc}
+              </p>
+            </div>
+
+            {opfsQuota && (
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontFamily: 'ui-monospace, monospace',
+                  color: '#475569',
+                  backgroundColor: '#ffffff',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid #e2e8f0',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {t.vault.quotaLabel(opfsQuota.usageFormatted)}
+              </span>
+            )}
+          </div>
+
+          {/* Drag-and-Drop Zone + File Input */}
+          <div
+            data-testid="vault-dropzone"
+            onDragEnter={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setIsDraggingVault(true)
+            }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setIsDraggingVault(true)
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setIsDraggingVault(false)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setIsDraggingVault(false)
+              const droppedFile = e.dataTransfer.files?.[0]
+              if (droppedFile) {
+                void handleImportVaultFile(droppedFile)
+              }
+            }}
+            onClick={() => {
+              if (!vaultImporting) {
+                fileInputRef.current?.click()
+              }
+            }}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '10px',
+              padding: '12px 14px',
+              borderRadius: '8px',
+              border: isDraggingVault
+                ? '2px dashed #2563eb'
+                : '1.5px dashed #cbd5e1',
+              backgroundColor: isDraggingVault ? '#eff6ff' : '#ffffff',
+              cursor: vaultImporting ? 'wait' : 'pointer',
+              minWidth: 0,
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              data-testid="vault-file-input"
+              type="file"
+              accept=".vcf,.plasmid,.txt"
+              onChange={(e) => {
+                const chosen = e.target.files?.[0]
+                if (chosen) {
+                  void handleImportVaultFile(chosen)
+                }
+              }}
+              style={{ display: 'none' }}
+            />
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                minWidth: 0,
+                flex: '1 1 200px',
+              }}
+            >
+              <Upload size={16} color="#2563eb" style={{ flexShrink: 0 }} />
+              <span
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: '#334155',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {vaultImporting
+                  ? t.vault.importingStatus
+                  : isDraggingVault
+                    ? t.vault.dropzoneActive
+                    : t.vault.dropzonePrompt}
+              </span>
+            </div>
+            <button
+              type="button"
+              data-testid="vault-upload-btn"
+              disabled={vaultImporting}
+              onClick={(e) => {
+                e.stopPropagation()
+                fileInputRef.current?.click()
+              }}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: '1px solid #2563eb',
+                backgroundColor: '#2563eb',
+                color: '#ffffff',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: vaultImporting ? 'wait' : 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t.vault.selectFileBtn}
+            </button>
+          </div>
+
+          {vaultError && (
+            <div
+              role="alert"
+              data-testid="vault-error-banner"
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '8px',
+                marginTop: '10px',
+                padding: '10px 12px',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '8px',
+                color: '#991b1b',
+                fontSize: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <AlertTriangle size={15} color="#dc2626" style={{ flexShrink: 0 }} />
+                <span style={{ wordBreak: 'break-word' }}>
+                  <strong>{t.vault.uploadErrorPrefix}</strong> {vaultError}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setVaultError(null)}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  border: '1px solid #fca5a5',
+                  backgroundColor: '#ffffff',
+                  color: '#991b1b',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {t.vault.dismissBtn}
+              </button>
+            </div>
+          )}
+
+          {/* Source Switcher: Public Demo <-> Stored OPFS Vault Files */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '8px',
+              marginTop: '12px',
+              minWidth: 0,
+            }}
+          >
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                color: '#64748b',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t.vault.sourceLabel}:
+            </span>
+
+            <button
+              type="button"
+              data-testid="source-public-demo"
+              onClick={() => {
+                if (sourceMode !== 'public') {
+                  void activateDataSource('public', DEFAULT_OPFS_FILENAME)
+                }
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '6px 10px',
+                borderRadius: '6px',
+                fontSize: '12px',
+                fontWeight: sourceMode === 'public' ? 700 : 500,
+                border:
+                  sourceMode === 'public' ? '1px solid #2563eb' : '1px solid #cbd5e1',
+                backgroundColor: sourceMode === 'public' ? '#eff6ff' : '#ffffff',
+                color: sourceMode === 'public' ? '#1d4ed8' : '#334155',
+                cursor: 'pointer',
+                maxWidth: '100%',
+                wordBreak: 'break-word',
+              }}
+            >
+              <span>{t.vault.publicDemoSource}</span>
+            </button>
+
+            {vaultFiles.map((vf) => {
+              const isSelectedVault =
+                sourceMode === 'vault' && activeOpfsFilename === vf.opfsPath
+              return (
+                <div
+                  key={vf.opfsPath}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    borderRadius: '6px',
+                    border: isSelectedVault
+                      ? '1px solid #16a34a'
+                      : '1px solid #cbd5e1',
+                    backgroundColor: isSelectedVault ? '#dcfce7' : '#ffffff',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <button
+                    type="button"
+                    data-testid="source-vault-file"
+                    data-vault-name={vf.name}
+                    onClick={() => {
+                      if (!isSelectedVault) {
+                        void activateDataSource('vault', vf.opfsPath)
+                      }
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '6px 10px',
+                      border: 'none',
+                      backgroundColor: 'transparent',
+                      color: isSelectedVault ? '#14532d' : '#0f172a',
+                      fontSize: '12px',
+                      fontWeight: isSelectedVault ? 700 : 600,
+                      cursor: 'pointer',
+                      minWidth: 0,
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    <ShieldCheck
+                      size={13}
+                      color={isSelectedVault ? '#15803d' : '#64748b'}
+                      style={{ flexShrink: 0 }}
+                    />
+                    <span>{vf.name}</span>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        color: isSelectedVault ? '#166534' : '#64748b',
+                        fontFamily: 'ui-monospace, monospace',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      ({opfs.formatBytes(vf.size)})
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="delete-vault-file"
+                    data-vault-name={vf.name}
+                    aria-label={t.vault.deleteVaultAria(vf.name)}
+                    title={t.vault.deleteVaultAria(vf.name)}
+                    onClick={() => void handleDeleteVaultFile(vf)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '6px 8px',
+                      border: 'none',
+                      borderLeft: isSelectedVault
+                        ? '1px solid #86efac'
+                        : '1px solid #e2e8f0',
+                      backgroundColor: 'transparent',
+                      color: '#dc2626',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Trash2 size={13} />
+                    <span>{t.vault.deleteVaultBtn}</span>
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
         {/* Active Container Variant Bar */}
         <div
           style={{
@@ -414,7 +976,7 @@ export default function App() {
                 fontWeight: 600,
               }}
             >
-              {t.locus.activeLocus}
+              {sourceMode === 'vault' ? t.locus.activeVaultLocus : t.locus.activeLocus}
             </span>
             {catalogLoading ? (
               <div style={{ fontSize: '13px', color: '#475569', marginTop: '4px' }}>
@@ -513,6 +1075,9 @@ export default function App() {
           <div style={{ marginBottom: '24px' }}>
             <GenomeNavigator
               lang={lang}
+              sourceMode={sourceMode}
+              opfsFilename={activeOpfsFilename}
+              containerAssembly={session?.containerAssembly ?? 'GRCh38'}
               catalogItems={catalogItems}
               selectedCatalogKey={selectedKey}
               onSelectCatalogKey={setSelectedKey}
@@ -980,7 +1545,7 @@ export default function App() {
               </div>
             ) : (
               <>
-                {guardError || liftoverError ? (
+                {guardError ? (
                   <div
                     style={{
                       padding: '16px',
@@ -1022,8 +1587,41 @@ export default function App() {
                             overflowWrap: 'anywhere',
                           }}
                         >
-                          {guardError || liftoverError}
+                          {guardError}
                         </code>
+                      </div>
+                    </div>
+                  </div>
+                ) : liftoverError ? (
+                  <div
+                    style={{
+                      padding: '16px',
+                      backgroundColor: '#fffbeb',
+                      border: '1px solid #fde68a',
+                      borderRadius: '6px',
+                      marginBottom: '24px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                      <ShieldCheck
+                        size={18}
+                        color="#d97706"
+                        style={{ marginTop: '2px', flexShrink: 0 }}
+                      />
+                      <div style={{ minWidth: 0 }}>
+                        <h3
+                          style={{
+                            margin: '0 0 4px 0',
+                            fontSize: '14px',
+                            fontWeight: 700,
+                            color: '#92400e',
+                          }}
+                        >
+                          {t.liftover.unmappedNoticeTitle}
+                        </h3>
+                        <p style={{ margin: 0, fontSize: '13px', color: '#b45309' }}>
+                          {t.liftover.unmappedNoticeDesc}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -1079,7 +1677,9 @@ export default function App() {
                         marginBottom: '4px',
                       }}
                     >
-                      {t.liftover.sourceBuild}
+                      {session?.containerAssembly === 'GRCh37'
+                        ? t.liftover.liftedGrch38Build
+                        : t.liftover.sourceBuild}
                     </span>
                     <span
                       style={{
@@ -1087,10 +1687,10 @@ export default function App() {
                         fontWeight: 700,
                         fontFamily: 'ui-monospace, monospace',
                         wordBreak: 'break-all',
-                        color: guardError || liftoverError ? '#dc2626' : '#0f172a',
+                        color: guardError ? '#dc2626' : '#0f172a',
                       }}
                     >
-                      {guardError || liftoverError
+                      {guardError
                         ? t.liftover.blockedLabel
                         : liftoverResult
                           ? `${liftoverResult.lifted_chrom}:${liftoverResult.lifted_pos.toLocaleString()}`
@@ -1144,7 +1744,9 @@ export default function App() {
                         marginBottom: '4px',
                       }}
                     >
-                      {t.liftover.targetBuild}
+                      {session?.containerAssembly === 'GRCh37'
+                        ? t.liftover.sourceGrch37Build
+                        : t.liftover.targetBuild}
                     </span>
                     <span
                       style={{
@@ -1159,15 +1761,13 @@ export default function App() {
                     <span
                       style={{
                         fontSize: '11px',
-                        color: guardError || liftoverError ? '#dc2626' : '#16a34a',
+                        color: guardError ? '#dc2626' : '#16a34a',
                         fontWeight: 600,
                         display: 'block',
                         marginTop: '4px',
                       }}
                     >
-                      {guardError || liftoverError
-                        ? t.liftover.blockedNote
-                        : t.liftover.deltaNote}
+                      {guardError ? t.liftover.blockedNote : t.liftover.deltaNote}
                     </span>
                   </div>
                 </div>

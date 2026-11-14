@@ -6,6 +6,7 @@ export interface NavigatorTranslations {
   level3Badge: string
   level2Badge: string
   airgapActive: string
+  vaultAirgapLocked: string
   edgeStreaming: string
   cacheToOpfs: string
   cachingPrefix: string
@@ -70,9 +71,27 @@ export interface TranslationSchema {
   }
   locus: {
     activeLocus: string
+    activeVaultLocus: string
     targetBuildPrefix: string
     loadingCatalog: string
     catalogEmpty: string
+  }
+  vault: {
+    title: string
+    badgeZeroNetwork: string
+    desc: string
+    dropzonePrompt: string
+    dropzoneActive: string
+    selectFileBtn: string
+    importingStatus: string
+    sourceLabel: string
+    publicDemoSource: string
+    vaultFileBadge: string
+    deleteVaultBtn: string
+    deleteVaultAria: (name: string) => string
+    quotaLabel: (used: string) => string
+    uploadErrorPrefix: string
+    dismissBtn: string
   }
   navigator: NavigatorTranslations
   stream: {
@@ -105,10 +124,14 @@ export interface TranslationSchema {
     warningTitle: string
     warningDesc: string
     sourceBuild: string
+    liftedGrch38Build: string
     allelesPrefix: string
     unmappedLabel: string
+    unmappedNoticeTitle: string
+    unmappedNoticeDesc: string
     delta: string
     targetBuild: string
+    sourceGrch37Build: string
     deltaNote: string
     blockedLabel: string
     blockedNote: string
@@ -184,9 +207,27 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
     },
     locus: {
       activeLocus: '.plasmid 컨테이너 내 디코딩된 변이',
-      targetBuildPrefix: '컨테이너 기준 유전체',
-      loadingCatalog: '.plasmid 바이너리 헤더 및 인덱스를 디코딩하는 중…',
-      catalogEmpty: '로드된 .plasmid 컨테이너에 디코딩 가능한 변이가 없습니다.',
+      activeVaultLocus: '로컬 OPFS 에어갭 볼트 내 디코딩된 개인 변이',
+      targetBuildPrefix: '기준 유전체',
+      loadingCatalog: '유전체 데이터 및 인덱스를 WASM으로 디코딩하는 중…',
+      catalogEmpty: '로드된 데이터셋에 디코딩 가능한 변이가 없습니다.',
+    },
+    vault: {
+      title: '개인 유전체 로컬 OPFS 에어갭 볼트',
+      badgeZeroNetwork: '네트워크 요청 0건 • 브라우저 내부 격리',
+      desc: '로컬 .vcf, .plasmid, .txt 파일을 브라우저 전용 격리 저장소(OPFS)에 보관하고 외부 통신 없이 WASM으로 직접 파싱합니다.',
+      dropzonePrompt: '여기에 개인 .vcf / .plasmid / .txt 파일을 드래그하거나 클릭하여 선택',
+      dropzoneActive: '파일을 놓아 브라우저 OPFS 에어갭 볼트에 격리 저장',
+      selectFileBtn: '로컬 파일 불러오기',
+      importingStatus: 'OPFS 격리 저장 및 WASM 파싱 중…',
+      sourceLabel: '활성 데이터 소스',
+      publicDemoSource: '공공 참조 (demo.plasmid)',
+      vaultFileBadge: 'OPFS 볼트',
+      deleteVaultBtn: '삭제',
+      deleteVaultAria: (name) => `OPFS 볼트에서 ${name} 삭제`,
+      quotaLabel: (used) => `OPFS 사용량: ${used}`,
+      uploadErrorPrefix: '로컬 볼트 파일 오류:',
+      dismissBtn: '닫기',
     },
     navigator: {
       title: '다중 스케일 전장 유전체 네비게이터',
@@ -194,6 +235,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       level3Badge: '레벨 3 (염기/변이 상세)',
       level2Badge: '레벨 2 (밀도 히스토그램)',
       airgapActive: 'OPFS 에어갭 격리 활성',
+      vaultAirgapLocked: '개인 볼트 에어갭 격리 (통신 0건)',
       edgeStreaming: '엣지 구간 스트리밍',
       cacheToOpfs: 'OPFS 로컬 저장',
       cachingPrefix: '저장 중',
@@ -268,10 +310,14 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       warningTitle: 'WASM 좌표 드리프트 불일치 차단',
       warningDesc: '요청된 염기 서열과 참조 유전체 위치가 일치하지 않아 변환이 거부되었습니다.',
       sourceBuild: '변환된 GRCh37 (hg19) 좌표',
+      liftedGrch38Build: '변환된 GRCh38 (hg38) 좌표',
       allelesPrefix: '대립유전자',
       unmappedLabel: '매핑 범위 밖',
+      unmappedNoticeTitle: '염기 지문 검증 통과 • 보정 체인 범위 밖 좌표',
+      unmappedNoticeDesc: '단일 염기 참조 지문은 일치하나, 해당 좌표는 현재 내장된 임상 앵커 Liftover 체인 구간 밖에 위치합니다.',
       delta: '실측 좌표 이동량',
-      targetBuild: '컨테이너 GRCh38 (hg38) 원본 좌표',
+      targetBuild: '원본 GRCh38 (hg38) 좌표',
+      sourceGrch37Build: '원본 GRCh37 (hg19) 좌표',
       deltaNote: 'WASM 엔진 실시간 변환 결과',
       blockedLabel: '변환 차단됨 (불일치)',
       blockedNote: '참조 서열 불일치로 변환 중단됨',
@@ -345,9 +391,27 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
     },
     locus: {
       activeLocus: 'Decoded Variant from .plasmid Container',
-      targetBuildPrefix: 'Container Reference',
-      loadingCatalog: 'Decoding .plasmid 128B header and directory index…',
-      catalogEmpty: 'No decodable VCF variants found in the loaded .plasmid container.',
+      activeVaultLocus: 'Decoded Variant from Local OPFS Air-Gap Vault',
+      targetBuildPrefix: 'Reference Build',
+      loadingCatalog: 'Decoding genomic dataset and coordinate index via WASM…',
+      catalogEmpty: 'No decodable VCF variants found in the loaded dataset.',
+    },
+    vault: {
+      title: 'Private Genome OPFS Air-Gap Vault',
+      badgeZeroNetwork: '0 Network Requests • Browser Sandbox',
+      desc: 'Store local .vcf, .plasmid, or .txt files inside Origin Private File System (OPFS) and decode them strictly via local WebAssembly with zero network traffic.',
+      dropzonePrompt: 'Drag & drop a local .vcf / .plasmid / .txt file here, or click to browse',
+      dropzoneActive: 'Release to store file inside isolated OPFS Air-Gap Vault',
+      selectFileBtn: 'Import Local File',
+      importingStatus: 'Saving to OPFS & parsing via WASM…',
+      sourceLabel: 'Active Data Source',
+      publicDemoSource: 'Public Demo (demo.plasmid)',
+      vaultFileBadge: 'OPFS Vault',
+      deleteVaultBtn: 'Delete',
+      deleteVaultAria: (name) => `Delete ${name} from OPFS Vault`,
+      quotaLabel: (used) => `OPFS Used: ${used}`,
+      uploadErrorPrefix: 'Local Vault File Error:',
+      dismissBtn: 'Dismiss',
     },
     navigator: {
       title: 'Multi-scale Whole-Genome Navigator',
@@ -355,6 +419,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       level3Badge: 'Level 3 (Base/Variant)',
       level2Badge: 'Level 2 (Density)',
       airgapActive: 'OPFS Airgap Active',
+      vaultAirgapLocked: 'Private Vault Air-Gap (0 Network)',
       edgeStreaming: 'Edge Range Streaming',
       cacheToOpfs: 'Cache to OPFS',
       cachingPrefix: 'Caching',
@@ -429,10 +494,14 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       warningTitle: 'WASM CoordinateGuard Blocked Drift Mismatch',
       warningDesc: 'Reference sequence mismatch detected by plasmid-core WASM; coordinate conversion halted.',
       sourceBuild: 'Lifted GRCh37 (hg19) Coordinate',
+      liftedGrch38Build: 'Lifted GRCh38 (hg38) Coordinate',
       allelesPrefix: 'Alleles',
       unmappedLabel: 'Unmapped',
+      unmappedNoticeTitle: 'Fingerprint Verified • Outside Curated Liftover Chain',
+      unmappedNoticeDesc: 'Single-base reference fingerprint passed, while this locus lies outside the bundled clinical Liftover intervals.',
       delta: 'Measured Shift',
-      targetBuild: 'Container GRCh38 (hg38) Coordinate',
+      targetBuild: 'Source GRCh38 (hg38) Coordinate',
+      sourceGrch37Build: 'Source GRCh37 (hg19) Coordinate',
       deltaNote: 'Computed live by plasmid-core WASM LiftoverEngine',
       blockedLabel: 'Blocked by Guard',
       blockedNote: 'Conversion halted due to sequence mismatch',
@@ -506,9 +575,27 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
     },
     locus: {
       activeLocus: '.plasmid 容器解码变异位点',
-      targetBuildPrefix: '容器参考基因组',
-      loadingCatalog: '正在解码 .plasmid 128B 头部与目录索引…',
-      catalogEmpty: '当前加载的 .plasmid 容器中未找到可解码的变异记录。',
+      activeVaultLocus: '本地 OPFS 空气隔离保险库解码变异',
+      targetBuildPrefix: '参考基因组',
+      loadingCatalog: '正在通过 WASM 解码基因组数据与坐标索引…',
+      catalogEmpty: '当前加载的数据集中未找到可解码的变异记录。',
+    },
+    vault: {
+      title: '个人基因组本地 OPFS 空气隔离保险库',
+      badgeZeroNetwork: '零网络请求 • 浏览器本地隔离',
+      desc: '将本地 .vcf、.plasmid 或 .txt 文件保存在浏览器私有文件系统 (OPFS) 中，在不发起任何网络请求的情况下通过本地 WASM 解码。',
+      dropzonePrompt: '将本地 .vcf / .plasmid / .txt 文件拖放至此处，或点击选择文件',
+      dropzoneActive: '释放鼠标以保存至隔离的 OPFS 空气隔离保险库',
+      selectFileBtn: '导入本地文件',
+      importingStatus: '正在写入 OPFS 并通过 WASM 解析…',
+      sourceLabel: '当前数据源',
+      publicDemoSource: '公共示例 (demo.plasmid)',
+      vaultFileBadge: 'OPFS 保险库',
+      deleteVaultBtn: '删除',
+      deleteVaultAria: (name) => `从 OPFS 保险库删除 ${name}`,
+      quotaLabel: (used) => `OPFS 已用: ${used}`,
+      uploadErrorPrefix: '本地保险库文件错误：',
+      dismissBtn: '关闭',
     },
     navigator: {
       title: '多尺度全基因组导航器',
@@ -516,6 +603,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       level3Badge: '级别 3 (碱基/变异)',
       level2Badge: '级别 2 (密度直方图)',
       airgapActive: 'OPFS 空气隔离已启用',
+      vaultAirgapLocked: '私有保险库空气隔离（零通信）',
       edgeStreaming: '边缘区间流传输',
       cacheToOpfs: '缓存至 OPFS',
       cachingPrefix: '正在缓存',
@@ -590,10 +678,14 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       warningTitle: 'WASM 已拦截坐标偏移不匹配',
       warningDesc: '检测到参考序列指纹不匹配，已安全中止坐标转换。',
       sourceBuild: '转换后 GRCh37 (hg19) 坐标',
+      liftedGrch38Build: '转换后 GRCh38 (hg38) 坐标',
       allelesPrefix: '等位基因',
       unmappedLabel: '未映射',
+      unmappedNoticeTitle: '序列指纹校验通过 • 超出内置转换链区间',
+      unmappedNoticeDesc: '单碱基参考指纹校验一致，但该位点位于当前内置临床锚点转换链区间之外。',
       delta: '实测位移',
-      targetBuild: '容器 GRCh38 (hg38) 原始坐标',
+      targetBuild: '源 GRCh38 (hg38) 原始坐标',
+      sourceGrch37Build: '源 GRCh37 (hg19) 原始坐标',
       deltaNote: '由 WASM 引擎实时计算',
       blockedLabel: '已拦截转换',
       blockedNote: '参考序列不匹配，已中止转换',
@@ -667,9 +759,27 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
     },
     locus: {
       activeLocus: '.plasmid コンテナからデコードされた変異',
-      targetBuildPrefix: 'コンテナ参照ゲノム',
-      loadingCatalog: '.plasmid 128B ヘッダーとディレクトリ索引をデコード中…',
-      catalogEmpty: '読み込まれた .plasmid コンテナにデコード可能な変異がありません。',
+      activeVaultLocus: 'OPFS エアギャップ保管庫からデコードされた個人変異',
+      targetBuildPrefix: '参照ゲノム',
+      loadingCatalog: 'ゲノムデータと座標索引を WASM でデコード中…',
+      catalogEmpty: '読み込まれたデータセットにデコード可能な変異がありません。',
+    },
+    vault: {
+      title: '個人ゲノム OPFS エアギャップ保管庫',
+      badgeZeroNetwork: '通信 0件 • ブラウザ内完全隔離',
+      desc: 'ローカルの .vcf・.plasmid・.txt ファイルをブラウザ専用領域 (OPFS) に隔離保存し、外部通信ゼロでローカル WASM により解析します。',
+      dropzonePrompt: 'ここに個人 .vcf / .plasmid / .txt ファイルをドロップ、またはクリックして選択',
+      dropzoneActive: 'ドロップして OPFS エアギャップ保管庫へ隔離保存',
+      selectFileBtn: 'ローカルファイル読込',
+      importingStatus: 'OPFS 隔離保存および WASM 解析中…',
+      sourceLabel: '有効データソース',
+      publicDemoSource: '公共デモ (demo.plasmid)',
+      vaultFileBadge: 'OPFS 保管庫',
+      deleteVaultBtn: '削除',
+      deleteVaultAria: (name) => `OPFS 保管庫から ${name} を削除`,
+      quotaLabel: (used) => `OPFS 使用量: ${used}`,
+      uploadErrorPrefix: 'ローカル保管庫エラー:',
+      dismissBtn: '閉じる',
     },
     navigator: {
       title: 'マルチスケール全ゲノムナビゲーター',
@@ -677,6 +787,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       level3Badge: 'レベル 3 (塩基/変異)',
       level2Badge: 'レベル 2 (密度ヒストグラム)',
       airgapActive: 'OPFS エアギャップ有効',
+      vaultAirgapLocked: '個人保管庫エアギャップ（通信 0件）',
       edgeStreaming: 'エッジ範囲ストリーミング',
       cacheToOpfs: 'OPFS に保存',
       cachingPrefix: '保存中',
@@ -751,10 +862,14 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       warningTitle: 'WASM が座標ドリフト不一致を遮断',
       warningDesc: '参照塩基配列の不一致が検出されたため、座標変換を安全に停止しました。',
       sourceBuild: '変換された GRCh37 (hg19) 座標',
+      liftedGrch38Build: '変換された GRCh38 (hg38) 座標',
       allelesPrefix: 'アレル',
       unmappedLabel: '未マップ',
+      unmappedNoticeTitle: '配列フィンガープリント検証完了 • 内蔵変換チェーン範囲外',
+      unmappedNoticeDesc: '1塩基参照フィンガープリントは一致していますが、この座位は内蔵された臨床アンカー変換チェーン区間外です。',
       delta: '実測シフト量',
-      targetBuild: 'コンテナ GRCh38 (hg38) 座標',
+      targetBuild: '元 GRCh38 (hg38) 座標',
+      sourceGrch37Build: '元 GRCh37 (hg19) 座標',
       deltaNote: 'WASM エンジンによる実測値',
       blockedLabel: '変換遮断',
       blockedNote: '参照配列不一致のため変換停止',

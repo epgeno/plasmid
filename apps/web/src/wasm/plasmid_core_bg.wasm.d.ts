@@ -13,7 +13,9 @@ export const plasmidwasmengine_liftover_hg19_to_hg38: (a: number, b: number, c: 
 export const plasmidwasmengine_liftover_hg38_to_hg19: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
 export const plasmidwasmengine_parse_directory_entries: (a: number, b: number) => [number, number, number];
 export const plasmidwasmengine_parse_header: (a: number, b: number) => [number, number, number];
+export const plasmidwasmengine_parse_local_plasmid: (a: number, b: number) => [number, number, number];
 export const plasmidwasmengine_parse_root_directory: (a: number, b: number) => [number, number, number];
+export const plasmidwasmengine_parse_vcf_dataset: (a: number, b: number, c: number, d: number) => [number, number, number];
 export const plasmidwasmengine_plan_range_slice: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
 export const plasmidwasmengine_query_root_leaves: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
 export const plasmidwasmengine_verify_chunk_hash: (a: number, b: number, c: number, d: number) => number;

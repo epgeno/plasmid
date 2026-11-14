@@ -1,5 +1,7 @@
 export type GenomeAssembly = 'GRCh38' | 'GRCh37';
 
+export type DataSourceMode = 'public' | 'vault';
+
 export type EntryTypeName =
   | 'ReferenceFasta'
   | 'CramAlignment'
@@ -204,4 +206,55 @@ export interface CatalogVariantItem {
   chunkHashes: WasmChunkHashInfo[];
   annotations: AnnotationRecord[];
   bytesTransferred: number;
+}
+
+export interface WasmChromCoordinateIndex {
+  chrom_id: number;
+  chrom_name: string;
+  min_pos: number;
+  max_pos: number;
+  variant_count: number;
+  pathogenic_count: number;
+  start_index: number;
+  end_index: number;
+}
+
+export interface WasmVcfDatasetRaw {
+  reference_build: string;
+  byte_length: number;
+  sha256_hex: string;
+  pyramid: PyramidIndex;
+  chrom_index: WasmChromCoordinateIndex[];
+  variants: VcfVariantRecord[];
+}
+
+export interface ParsedVcfDataset {
+  reference_build: string;
+  byte_length: number;
+  sha256_hex: string;
+  pyramid: PyramidIndex;
+  chrom_index: WasmChromCoordinateIndex[];
+  variants: ParsedVariant[];
+}
+
+export interface WasmLocalPlasmidDatasetRaw {
+  header: WasmHeaderInfo;
+  metadata_json: string;
+  merkle: WasmMerkleVerification;
+  pyramid: PyramidIndex;
+  chrom_index: WasmChromCoordinateIndex[];
+  leaves: WasmLeafPointerInfo[];
+  entries: WasmIndexEntryInfo[];
+  variants: VcfVariantRecord[];
+}
+
+export interface ParsedLocalPlasmidDataset {
+  header: WasmHeaderInfo;
+  metadata_json: string;
+  merkle: WasmMerkleVerification;
+  pyramid: PyramidIndex;
+  chrom_index: WasmChromCoordinateIndex[];
+  leaves: WasmLeafPointerInfo[];
+  entries: WasmIndexEntryInfo[];
+  variants: ParsedVariant[];
 }
