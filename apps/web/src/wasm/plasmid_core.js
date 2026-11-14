@@ -118,6 +118,24 @@ export class PlasmidWasmEngine {
         }
     }
     /**
+     * Generates BEP 52 SHA-256 Merkle audit proofs for requested chunk indices.
+     * @param {Uint8Array} payload_bytes
+     * @param {number} chunk_size
+     * @param {Uint32Array} chunk_indices
+     * @returns {any}
+     */
+    static generate_chunk_proofs(payload_bytes, chunk_size, chunk_indices) {
+        const ptr0 = passArray8ToWasm0(payload_bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray32ToWasm0(chunk_indices, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.plasmidwasmengine_generate_chunk_proofs(ptr0, len0, chunk_size, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
      * Returns authoritative contig lengths and centromere coordinates for GRCh38 or GRCh37.
      * @param {string} assembly
      * @returns {any}
@@ -422,6 +440,29 @@ export class PlasmidWasmEngine {
             throw takeFromExternrefTable0(ret[1]);
         }
         return ret[0] !== 0;
+    }
+    /**
+     * Verifies a single 16KB P2P chunk against the container header's BEP 52 Merkle root and proof path.
+     * @param {Uint8Array} chunk_bytes
+     * @param {number} chunk_index
+     * @param {number} total_chunks
+     * @param {number} chunk_size
+     * @param {string} expected_root_hex
+     * @param {string} proof_json
+     * @returns {any}
+     */
+    static verify_merkle_chunk_proof(chunk_bytes, chunk_index, total_chunks, chunk_size, expected_root_hex, proof_json) {
+        const ptr0 = passArray8ToWasm0(chunk_bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(expected_root_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(proof_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.plasmidwasmengine_verify_merkle_chunk_proof(ptr0, len0, chunk_index, total_chunks, chunk_size, ptr1, len1, ptr2, len2);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
     }
     /**
      * Recomputes full BEP 52 SHA-256 Merkle Tree over container payload chunks and verifies root hash.

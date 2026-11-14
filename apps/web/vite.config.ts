@@ -3,11 +3,90 @@ import { resolve, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { defaultSwarmRelay, MAX_SIGNAL_BODY_BYTES } from './src/services/signalingRelay'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const publicDir = resolve(__dirname, 'public')
 
 function plasmidLocalRangeMiddleware(): Plugin {
+  const signalHandler = (req: any, res: any, next: () => void) => {
+    const rawUrl: string = req.url || ''
+    const pathname = rawUrl.split('?')[0]
+    if (pathname !== '/api/swarm/signal') {
+      next()
+      return
+    }
+
+    const method = (req.method || 'GET').toUpperCase()
+    const headers = new Headers()
+    for (const [k, v] of Object.entries(req.headers || {})) {
+      if (typeof v === 'string') {
+        headers.set(k, v)
+      } else if (Array.isArray(v)) {
+        headers.set(k, v.join(', '))
+      }
+    }
+
+    const dispatchToRelay = async (bodyText?: string) => {
+      try {
+        const fullUrl = `http://${req.headers?.host || 'localhost:4173'}${rawUrl}`
+        const init: RequestInit = { method, headers }
+        if (bodyText !== undefined && method !== 'GET' && method !== 'HEAD') {
+          init.body = bodyText
+        }
+        const webReq = new Request(fullUrl, init)
+        const webRes = await defaultSwarmRelay.handleRequest(webReq)
+        res.statusCode = webRes.status
+        webRes.headers.forEach((val, key) => {
+          res.setHeader(key, val)
+        })
+        const outBuf = Buffer.from(await webRes.arrayBuffer())
+        res.end(outBuf)
+      } catch (err: unknown) {
+        res.statusCode = 500
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.end(
+          JSON.stringify({
+            error: err instanceof Error ? err.message : 'Signaling relay error',
+          })
+        )
+      }
+    }
+
+    if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+      void dispatchToRelay()
+      return
+    }
+
+    const chunks: Buffer[] = []
+    let totalBytes = 0
+    let tooLarge = false
+
+    req.on('data', (chunk: Buffer) => {
+      totalBytes += chunk.byteLength
+      if (totalBytes > MAX_SIGNAL_BODY_BYTES + 4096) {
+        tooLarge = true
+        return
+      }
+      chunks.push(chunk)
+    })
+
+    req.on('end', () => {
+      if (tooLarge) {
+        res.statusCode = 413
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.end(
+          JSON.stringify({
+            error: `Signaling payload exceeds ${MAX_SIGNAL_BODY_BYTES} byte limit`,
+          })
+        )
+        return
+      }
+      void dispatchToRelay(Buffer.concat(chunks).toString('utf8'))
+    })
+  }
+
   const handler = (req: any, res: any, next: () => void) => {
     const rawUrl: string = req.url || ''
     const pathname = rawUrl.split('?')[0]
@@ -128,9 +207,11 @@ function plasmidLocalRangeMiddleware(): Plugin {
   return {
     name: 'plasmid-local-range-server',
     configureServer(server) {
+      server.middlewares.use(signalHandler)
       server.middlewares.use(handler)
     },
     configurePreviewServer(server) {
+      server.middlewares.use(signalHandler)
       server.middlewares.use(handler)
     },
   }

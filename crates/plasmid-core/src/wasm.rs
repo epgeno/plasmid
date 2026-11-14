@@ -6,9 +6,9 @@ use crate::liftover::{CoordinateGuard, GenomeBuild};
 use crate::pyramid::PyramidIndex;
 use crate::slicing::{ByteRange, RangePlanner, SlicingPlan, coalesce_byte_ranges};
 use plasmid_format::{
-    EntryType, FLAG_HIERARCHICAL_INDEX, HEADER_SIZE, MerkleTree, PlasmidDirectory, PlasmidHeader,
-    PlasmidIndexEntry, PlasmidLeafPointer, PlasmidReader, PlasmidRootDirectory,
-    decompress_gzip_bounded, decompress_payload, hash_leaf, is_gzip_magic,
+    EntryType, FLAG_HIERARCHICAL_INDEX, HASH_SIZE, HEADER_SIZE, MerkleTree, PlasmidDirectory,
+    PlasmidHeader, PlasmidIndexEntry, PlasmidLeafPointer, PlasmidReader, PlasmidRootDirectory,
+    decompress_gzip_bounded, decompress_payload, hash_leaf, hash_node, is_gzip_magic,
 };
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -106,6 +106,31 @@ pub struct WasmMerkleVerification {
     pub total_chunks: usize,
     pub verified_bytes: usize,
     pub chunk_hashes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WasmMerkleProofStep {
+    pub sibling_hex: String,
+    pub is_right: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WasmChunkMerkleBundle {
+    pub chunk_index: u32,
+    pub total_chunks: u64,
+    pub leaf_sha256_hex: String,
+    pub root_hash_hex: String,
+    pub proof: Vec<WasmMerkleProofStep>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WasmChunkProofVerification {
+    pub verified: bool,
+    pub chunk_index: u32,
+    pub total_chunks: u64,
+    pub leaf_sha256_hex: String,
+    pub calculated_root_hex: String,
+    pub expected_root_hex: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -358,6 +383,166 @@ pub fn verify_merkle_tree_dto(
         total_chunks,
         verified_bytes: payload_bytes.len(),
         chunk_hashes,
+    })
+}
+
+fn hex_decode_32(hex: &str) -> Option<[u8; HASH_SIZE]> {
+    let clean = hex.trim().trim_start_matches("0x");
+    if clean.len() != HASH_SIZE * 2 {
+        return None;
+    }
+    let mut out = [0u8; HASH_SIZE];
+    for (i, slot) in out.iter_mut().enumerate() {
+        *slot = u8::from_str_radix(&clean[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
+pub fn generate_chunk_proofs_dto(
+    payload_bytes: &[u8],
+    chunk_size: u32,
+    chunk_indices: &[u32],
+) -> Result<Vec<WasmChunkMerkleBundle>> {
+    if chunk_size == 0 {
+        return Err(PlasmidCoreError::Serialization(
+            "chunk_size must be greater than zero".to_string(),
+        ));
+    }
+    let csize = chunk_size as usize;
+    if !payload_bytes.len().is_multiple_of(csize) {
+        return Err(PlasmidCoreError::Serialization(format!(
+            "Payload byte length ({}) is not a multiple of chunk_size ({})",
+            payload_bytes.len(),
+            csize
+        )));
+    }
+
+    let total_chunks = payload_bytes.len() / csize;
+    let mut leaves = Vec::with_capacity(total_chunks);
+    for i in 0..total_chunks {
+        let chunk = &payload_bytes[i * csize..(i + 1) * csize];
+        leaves.push(hash_leaf(chunk));
+    }
+
+    let tree = MerkleTree::from_leaves(leaves);
+    let root_hash_hex = hex_encode(&tree.root());
+    let mut bundles = Vec::with_capacity(chunk_indices.len());
+
+    for &chunk_idx in chunk_indices {
+        let idx = chunk_idx as usize;
+        if idx >= total_chunks {
+            return Err(PlasmidCoreError::Serialization(format!(
+                "Chunk index {chunk_idx} out of bounds for container with {total_chunks} chunks"
+            )));
+        }
+        let raw_proof = tree.proof(idx).ok_or_else(|| {
+            PlasmidCoreError::Serialization(format!(
+                "Merkle proof unavailable for chunk #{chunk_idx}"
+            ))
+        })?;
+        let leaf_sha256_hex = hex_encode(&tree.leaves[idx]);
+        let proof = raw_proof
+            .into_iter()
+            .map(|(sib, is_right)| WasmMerkleProofStep {
+                sibling_hex: hex_encode(&sib),
+                is_right,
+            })
+            .collect();
+
+        bundles.push(WasmChunkMerkleBundle {
+            chunk_index: chunk_idx,
+            total_chunks: total_chunks as u64,
+            leaf_sha256_hex,
+            root_hash_hex: root_hash_hex.clone(),
+            proof,
+        });
+    }
+
+    Ok(bundles)
+}
+
+pub fn verify_merkle_chunk_proof_dto(
+    chunk_bytes: &[u8],
+    chunk_index: u32,
+    total_chunks: u64,
+    chunk_size: u32,
+    expected_root_hex: &str,
+    proof: &[WasmMerkleProofStep],
+) -> Result<WasmChunkProofVerification> {
+    if chunk_size == 0 {
+        return Err(PlasmidCoreError::Serialization(
+            "chunk_size must be greater than zero".to_string(),
+        ));
+    }
+    let clean_expected = expected_root_hex
+        .trim()
+        .trim_start_matches("0x")
+        .to_lowercase();
+    let leaf_digest = hash_leaf(chunk_bytes);
+    let leaf_sha256_hex = hex_encode(&leaf_digest);
+
+    if chunk_bytes.len() != chunk_size as usize
+        || total_chunks == 0
+        || (chunk_index as u64) >= total_chunks
+        || hex_decode_32(&clean_expected).is_none()
+    {
+        return Ok(WasmChunkProofVerification {
+            verified: false,
+            chunk_index,
+            total_chunks,
+            leaf_sha256_hex,
+            calculated_root_hex: String::new(),
+            expected_root_hex: clean_expected,
+        });
+    }
+
+    let mut current = leaf_digest;
+    let mut idx = chunk_index as usize;
+    let mut layer_len = total_chunks as usize;
+    let mut topology_valid = true;
+
+    for step in proof {
+        if layer_len <= 1 {
+            topology_valid = false;
+            break;
+        }
+        let expected_is_right = idx % 2 == 1;
+        if step.is_right != expected_is_right {
+            topology_valid = false;
+            break;
+        }
+        let Some(sibling) = hex_decode_32(&step.sibling_hex) else {
+            topology_valid = false;
+            break;
+        };
+        if !expected_is_right && idx + 1 == layer_len && sibling != current {
+            topology_valid = false;
+            break;
+        }
+
+        current = if expected_is_right {
+            hash_node(&sibling, &current)
+        } else {
+            hash_node(&current, &sibling)
+        };
+        idx /= 2;
+        layer_len = layer_len.div_ceil(2);
+    }
+
+    if layer_len != 1 {
+        topology_valid = false;
+    }
+
+    let calculated_root_hex = hex_encode(&current);
+    let verified = topology_valid && calculated_root_hex.eq_ignore_ascii_case(&clean_expected);
+
+    Ok(WasmChunkProofVerification {
+        verified,
+        chunk_index,
+        total_chunks,
+        leaf_sha256_hex,
+        calculated_root_hex,
+        expected_root_hex: clean_expected,
     })
 }
 
@@ -811,6 +996,42 @@ impl PlasmidWasmEngine {
         to_js_json(&res)
     }
 
+    /// Generates BEP 52 SHA-256 Merkle audit proofs for requested chunk indices.
+    #[wasm_bindgen]
+    pub fn generate_chunk_proofs(
+        payload_bytes: &[u8],
+        chunk_size: u32,
+        chunk_indices: &[u32],
+    ) -> std::result::Result<JsValue, JsValue> {
+        let bundles = generate_chunk_proofs_dto(payload_bytes, chunk_size, chunk_indices)
+            .map_err(|e| JsValue::from_str(&format!("Merkle proof generation error: {e}")))?;
+        to_js_json(&bundles)
+    }
+
+    /// Verifies a single 16KB P2P chunk against the container header's BEP 52 Merkle root and proof path.
+    #[wasm_bindgen]
+    pub fn verify_merkle_chunk_proof(
+        chunk_bytes: &[u8],
+        chunk_index: u32,
+        total_chunks: f64,
+        chunk_size: u32,
+        expected_root_hex: &str,
+        proof_json: &str,
+    ) -> std::result::Result<JsValue, JsValue> {
+        let proof: Vec<WasmMerkleProofStep> = serde_json::from_str(proof_json)
+            .map_err(|e| JsValue::from_str(&format!("Proof JSON error: {e}")))?;
+        let res = verify_merkle_chunk_proof_dto(
+            chunk_bytes,
+            chunk_index,
+            total_chunks as u64,
+            chunk_size,
+            expected_root_hex,
+            &proof,
+        )
+        .map_err(|e| JsValue::from_str(&format!("Chunk proof verification error: {e}")))?;
+        to_js_json(&res)
+    }
+
     /// Returns authoritative contig lengths and centromere coordinates for GRCh38 or GRCh37.
     #[wasm_bindgen]
     pub fn get_assembly_overview(assembly: &str) -> std::result::Result<JsValue, JsValue> {
@@ -1179,5 +1400,84 @@ mod tests {
         assert_eq!(parsed.chrom_index.len(), 2);
         assert_eq!(parsed.chrom_index[0].chrom_name, "chr1");
         assert_eq!(parsed.chrom_index[1].chrom_name, "chr12");
+    }
+
+    #[test]
+    fn test_merkle_chunk_proof_generation_and_byzantine_rejection() {
+        let mut builder = PlasmidBuilder::new("GRCh38");
+        for i in 0..5u64 {
+            builder.add_item(
+                1,
+                EntryType::VcfVariant,
+                10_000 + i * 1_000,
+                10_000 + i * 1_000,
+                format!("chr1\t{}\trs{}\tA\tG\t99\tPASS\tGENE=TEST\n", 10_000 + i * 1_000, i)
+                    .into_bytes(),
+            );
+        }
+
+        let mut container = Vec::new();
+        builder.build_hierarchical(&mut container, 2).unwrap();
+        let header = parse_header_dto(&container[0..128]).unwrap();
+        assert_eq!(header.total_chunks, 5); // odd chunk count exercises trailing node duplication
+        let payload = &container[header.payload_offset as usize..];
+        let csize = header.chunk_size as usize;
+
+        let bundles = generate_chunk_proofs_dto(payload, header.chunk_size, &[0, 2, 4]).unwrap();
+        assert_eq!(bundles.len(), 3);
+
+        for b in &bundles {
+            let idx = b.chunk_index as usize;
+            let chunk_slice = &payload[idx * csize..(idx + 1) * csize];
+            let res = verify_merkle_chunk_proof_dto(
+                chunk_slice,
+                b.chunk_index,
+                header.total_chunks,
+                header.chunk_size,
+                &header.root_hash_hex,
+                &b.proof,
+            )
+            .unwrap();
+            assert!(res.verified, "Chunk {} must verify cleanly", b.chunk_index);
+            assert_eq!(res.calculated_root_hex, header.root_hash_hex);
+        }
+
+        // 1. Tampered byte in chunk #0 must fail verification
+        let mut tampered = payload[0..csize].to_vec();
+        tampered[0] ^= 0xff;
+        let bad_bytes = verify_merkle_chunk_proof_dto(
+            &tampered,
+            0,
+            header.total_chunks,
+            header.chunk_size,
+            &header.root_hash_hex,
+            &bundles[0].proof,
+        )
+        .unwrap();
+        assert!(!bad_bytes.verified);
+
+        // 2. Index-swap attack: sending valid chunk #0 + proof #0 while claiming chunk_index = 1 must fail topology check
+        let swapped_idx = verify_merkle_chunk_proof_dto(
+            &payload[0..csize],
+            1,
+            header.total_chunks,
+            header.chunk_size,
+            &header.root_hash_hex,
+            &bundles[0].proof,
+        )
+        .unwrap();
+        assert!(!swapped_idx.verified);
+
+        // 3. Truncated proof must fail depth check
+        let truncated = verify_merkle_chunk_proof_dto(
+            &payload[0..csize],
+            0,
+            header.total_chunks,
+            header.chunk_size,
+            &header.root_hash_hex,
+            &bundles[0].proof[..1],
+        )
+        .unwrap();
+        assert!(!truncated.verified);
     }
 }

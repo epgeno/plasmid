@@ -28,11 +28,13 @@ import { SupportedLanguage, TRANSLATIONS } from './i18n'
 import { ClinicalSummaryBento } from './components/ClinicalSummaryBento'
 import { ClinVarIntersectionPanel } from './components/ClinVarIntersectionPanel'
 import { GenomeNavigator } from './components/GenomeNavigator'
+import { SwarmPanel } from './components/SwarmPanel'
 import {
   DEFAULT_OPFS_FILENAME,
   plasmidContainerClient,
   type ContainerSession,
 } from './services/plasmidContainerClient'
+import { webRtcSwarmClient, type SwarmSnapshot } from './services/webrtcSwarm'
 import { decoderClient } from './services/decoderClient'
 import {
   detectVaultFileKind,
@@ -235,6 +237,22 @@ export default function App() {
     endPos?: number
     seq: number
   } | null>(null)
+
+  const [swarmSnapshot, setSwarmSnapshot] = useState<SwarmSnapshot>(() =>
+    webRtcSwarmClient.getSnapshot()
+  )
+
+  useEffect(() => {
+    const unsubscribe = webRtcSwarmClient.subscribe(setSwarmSnapshot)
+    const onBeforeUnload = () => {
+      void webRtcSwarmClient.leaveRoom()
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload)
+      unsubscribe()
+    }
+  }, [])
 
   const t = TRANSLATIONS[lang]
   const wt = t.workspace
@@ -889,7 +907,9 @@ export default function App() {
                   sourceMode === 'vault' &&
                   intersectionReport
                     ? intersectionReport.matched_count
-                    : null
+                    : tab.id === 'swarm' && swarmSnapshot.joined
+                      ? swarmSnapshot.peers.filter((p) => p.status === 'connected').length
+                      : null
 
                 return (
                   <button
@@ -1108,6 +1128,7 @@ export default function App() {
                 <button
                   key={l}
                   type="button"
+                  data-testid={`mobile-lang-btn-${l}`}
                   onClick={() => setLang(l)}
                   style={{
                     padding: '3px 7px',
@@ -1138,6 +1159,7 @@ export default function App() {
                 <button
                   key={tab.id}
                   type="button"
+                  data-testid={`mobile-nav-tab-${tab.id}`}
                   onClick={() => setActiveTab(tab.id)}
                   aria-current={active ? 'page' : undefined}
                   style={{
@@ -2639,273 +2661,14 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 4: Container Merkle Geometry & Privacy Architecture */}
+        {/* TAB 4: Live WebRTC P2P Merkle Swarm & Privacy Integrity */}
         {activeTab === 'swarm' && (
-          <div>
-            <div
-              style={{
-                border: '1px solid #e2e8f0',
-                borderRadius: '12px',
-                padding: '18px',
-                marginBottom: '24px',
-                backgroundColor: '#ffffff',
-              }}
-            >
-              <div style={{ marginBottom: '18px' }}>
-                <h2
-                  className="cjk-keep"
-                  style={{
-                    fontSize: '16px',
-                    fontWeight: 800,
-                    margin: '0 0 4px 0',
-                    color: '#0f172a',
-                    letterSpacing: '-0.02em',
-                  }}
-                >
-                  {t.swarm.title}
-                </h2>
-                <p style={{ margin: 0, fontSize: '13px', color: '#475569' }}>{t.swarm.desc}</p>
-              </div>
-
-              {session && (
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
-                    gap: '12px',
-                    marginBottom: '20px',
-                  }}
-                >
-                  <div
-                    style={{
-                      padding: '14px',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '8px',
-                      backgroundColor: '#f8fafc',
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        color: '#0f172a',
-                        display: 'block',
-                      }}
-                    >
-                      {t.swarm.containerPackTitle}
-                    </span>
-                    <span
-                      className="tabular-nums"
-                      style={{
-                        fontSize: '12px',
-                        fontFamily: 'ui-monospace, monospace',
-                        color: '#475569',
-                        display: 'block',
-                        marginTop: '4px',
-                      }}
-                    >
-                      {(session.totalFileSize / 1024).toFixed(2)} KB ·{' '}
-                      {session.header.total_chunks} ×{' '}
-                      {(session.header.chunk_size / 1024).toFixed(0)} KB
-                    </span>
-                  </div>
-
-                  <div
-                    style={{
-                      padding: '14px',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '8px',
-                      backgroundColor: '#f8fafc',
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        color: '#0f172a',
-                        display: 'block',
-                      }}
-                    >
-                      {t.swarm.directoryArchTitle}
-                    </span>
-                    <span
-                      className="tabular-nums"
-                      style={{
-                        fontSize: '12px',
-                        fontFamily: 'ui-monospace, monospace',
-                        color: '#475569',
-                        display: 'block',
-                        marginTop: '4px',
-                      }}
-                    >
-                      {session.header.is_hierarchical
-                        ? t.swarm.hierarchicalDesc(session.rootLeaves.length)
-                        : t.swarm.flatDesc}
-                    </span>
-                  </div>
-
-                  <div
-                    style={{
-                      padding: '14px',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '8px',
-                      backgroundColor: '#f8fafc',
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        color: '#0f172a',
-                        display: 'block',
-                      }}
-                    >
-                      {t.swarm.generatorBuildTitle}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: '12px',
-                        fontFamily: 'ui-monospace, monospace',
-                        color: '#475569',
-                        display: 'block',
-                        marginTop: '4px',
-                      }}
-                    >
-                      {session.metadata.generator || 'plasmid'} ·{' '}
-                      {session.header.reference_build}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              <div
-                style={{
-                  padding: '16px',
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                  marginBottom: '16px',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: '8px',
-                    marginBottom: '6px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Lock size={16} color="#2563eb" style={{ flexShrink: 0 }} />
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
-                      {t.swarm.privacyTitle}
-                    </span>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      color: '#1d4ed8',
-                      backgroundColor: '#eff6ff',
-                      border: '1px solid #bfdbfe',
-                      padding: '2px 8px',
-                      borderRadius: '9999px',
-                      wordBreak: 'break-word',
-                    }}
-                  >
-                    {t.swarm.privacyBadge}
-                  </span>
-                </div>
-                <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>
-                  {t.swarm.privacyDesc}
-                </p>
-                <div
-                  style={{
-                    marginTop: '12px',
-                    padding: '10px 14px',
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                  }}
-                >
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      color: '#166534',
-                    }}
-                  >
-                    <CheckCircle2 size={14} color="#16a34a" style={{ flexShrink: 0 }} />
-                    <span>{t.swarm.privacyStatusTitle}</span>
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      color: '#475569',
-                      display: 'block',
-                      marginTop: '3px',
-                    }}
-                  >
-                    {t.swarm.privacyStatusDesc}
-                  </span>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  padding: '16px',
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '8px',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: '8px',
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
-                      {t.swarm.integrityTitle}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: '12px',
-                        color: '#475569',
-                        display: 'block',
-                        marginTop: '2px',
-                      }}
-                    >
-                      {t.swarm.integrityDesc}
-                    </span>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      color: '#166534',
-                      backgroundColor: '#f0fdf4',
-                      border: '1px solid #bbf7d0',
-                      padding: '4px 10px',
-                      borderRadius: '9999px',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {t.swarm.airgapBadge}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <SwarmPanel
+            lang={lang}
+            session={session}
+            activeVariantChunkIndex={current?.chunkIndices[0] ?? null}
+            snapshot={swarmSnapshot}
+          />
         )}
 
         {/* TAB 5: Data Sources & Privacy Architecture */}

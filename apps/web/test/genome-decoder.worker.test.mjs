@@ -832,3 +832,66 @@ test('Adversarial: CJK filenames stay distinct in OPFS, unmapped Liftover never 
     plasmidContainerClient.clearCache();
   }
 });
+
+test('WASM worker GENERATE_CHUNK_PROOFS & VERIFY_MERKLE_CHUNK_PROOF verify real demo.plasmid 16KB P2P leaves and block tampered/swapped chunks', async () => {
+  const { header } = await handleWorkerRequest('PARSE_HEADER', {
+    buffer: demoPlasmidBytes.subarray(0, 128),
+  });
+  const payload = demoPlasmidBytes.subarray(
+    header.payload_offset,
+    header.payload_offset + header.total_payload_bytes
+  );
+
+  const { bundles } = await handleWorkerRequest('GENERATE_CHUNK_PROOFS', {
+    payloadBuffer: payload,
+    chunkSize: header.chunk_size,
+    chunkIndices: [0, 1, 89],
+  });
+  assert.equal(bundles.length, 3);
+
+  for (const b of bundles) {
+    const start = b.chunk_index * header.chunk_size;
+    const slice = payload.subarray(start, start + header.chunk_size);
+    const { verification } = await handleWorkerRequest('VERIFY_MERKLE_CHUNK_PROOF', {
+      chunkBuffer: slice,
+      chunkIndex: b.chunk_index,
+      totalChunks: header.total_chunks,
+      chunkSize: header.chunk_size,
+      expectedRootHex: header.root_hash_hex,
+      proof: b.proof,
+    });
+    assert.equal(verification.verified, true);
+    assert.equal(verification.calculated_root_hex, header.root_hash_hex);
+    assert.equal(verification.leaf_sha256_hex, b.leaf_sha256_hex);
+  }
+
+  // Tamper 1 byte in chunk #0 -> must fail BEP 52 Merkle proof verification
+  const tamperedChunk0 = new Uint8Array(payload.subarray(0, header.chunk_size));
+  tamperedChunk0[0] ^= 0xff;
+  const { verification: tamperedCheck } = await handleWorkerRequest(
+    'VERIFY_MERKLE_CHUNK_PROOF',
+    {
+      chunkBuffer: tamperedChunk0,
+      chunkIndex: 0,
+      totalChunks: header.total_chunks,
+      chunkSize: header.chunk_size,
+      expectedRootHex: header.root_hash_hex,
+      proof: bundles[0].proof,
+    }
+  );
+  assert.equal(tamperedCheck.verified, false);
+
+  // Swap chunk #0 bytes onto chunkIndex = 1 -> must fail binary tree topology check
+  const { verification: swappedCheck } = await handleWorkerRequest(
+    'VERIFY_MERKLE_CHUNK_PROOF',
+    {
+      chunkBuffer: payload.subarray(0, header.chunk_size),
+      chunkIndex: 1,
+      totalChunks: header.total_chunks,
+      chunkSize: header.chunk_size,
+      expectedRootHex: header.root_hash_hex,
+      proof: bundles[0].proof,
+    }
+  );
+  assert.equal(swappedCheck.verified, false);
+});

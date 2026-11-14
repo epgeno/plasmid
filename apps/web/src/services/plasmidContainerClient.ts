@@ -1444,6 +1444,192 @@ class PlasmidContainerClient {
       session,
     };
   }
+
+  /**
+   * Injects a cryptographically SHA-256 / Merkle-verified 16KB chunk obtained via WebRTC P2P
+   * or HTTP 206 Origin fallback directly into any open public container session cache.
+   */
+  public injectVerifiedSwarmChunk(
+    datasetUrl: string,
+    chunkIndex: number,
+    chunkBytes: Uint8Array
+  ): void {
+    const copy = new Uint8Array(chunkBytes);
+    for (const session of this.sessions.values()) {
+      if (
+        session.sourceMode === 'public' &&
+        (session.datasetUrl === datasetUrl || datasetUrl === DEFAULT_DATASET_URL)
+      ) {
+        session.chunkCache.set(chunkIndex, copy);
+      }
+    }
+  }
+
+  /**
+   * Loads and cryptographically Merkle-verifies the full public .plasmid payload
+   * so this browser peer can serve authentic 16KB leaf chunks + BEP 52 Merkle proofs as a WebRTC Seeder.
+   * Never reads from Private OPFS Vault paths (RFC-0002 Air-Gap enforced).
+   */
+  public async loadPublicPayloadForSeeding(options?: {
+    datasetUrl?: string;
+    opfsFilename?: string;
+    signal?: AbortSignal;
+    onLog?: AuditLogger;
+  }): Promise<{
+    session: ContainerSession;
+    payloadBytes: Uint8Array;
+    verification: WasmMerkleVerification;
+  }> {
+    const datasetUrl = options?.datasetUrl ?? DEFAULT_DATASET_URL;
+    const opfsFilename = options?.opfsFilename ?? DEFAULT_OPFS_FILENAME;
+    if (opfsFilename.startsWith(`${VAULT_DIR_NAME}/`)) {
+      throw new Error(
+        'RFC-0002 Air-Gap violation: private OPFS Vault files can never be seeded over WebRTC P2P.'
+      );
+    }
+
+    const airgapped = await opfs.hasFile(opfsFilename);
+    const session = await this.getSession({
+      sourceMode: 'public',
+      airgapped,
+      datasetUrl,
+      opfsFilename,
+      signal: options?.signal,
+      onLog: options?.onLog,
+    });
+
+    const { header } = session;
+    const payloadStart = header.payload_offset;
+    const payloadEnd = payloadStart + header.total_payload_bytes - 1;
+
+    const payloadRes = await this.readByteRange({
+      datasetUrl,
+      opfsFilename,
+      start: payloadStart,
+      end: payloadEnd,
+      airgapped: session.airgapped,
+      signal: options?.signal,
+      label: `Seeder Payload (${header.total_chunks} chunks)`,
+      onLog: options?.onLog,
+    });
+
+    const verification = await decoderClient.verifyMerkleTree(
+      payloadRes.bytes,
+      header.chunk_size,
+      header.root_hash_hex
+    );
+
+    if (!verification.verified) {
+      throw new Error(
+        `Cannot seed container: Merkle root verification failed (expected 0x${verification.expected_root_hex.slice(0, 16)}…, computed 0x${verification.calculated_root_hex.slice(0, 16)}…)`
+      );
+    }
+
+    for (let i = 0; i < header.total_chunks; i++) {
+      const slice = payloadRes.bytes.slice(
+        i * header.chunk_size,
+        (i + 1) * header.chunk_size
+      );
+      session.chunkCache.set(i, slice);
+    }
+
+    return {
+      session,
+      payloadBytes: payloadRes.bytes,
+      verification,
+    };
+  }
+
+  /**
+   * Fetches clean 16KB chunk(s) directly from the HTTPS Origin via HTTP 206 Range requests
+   * when a Byzantine P2P peer sends tampered chunk bytes and is banned.
+   */
+  public async fetchOriginChunksHttp206(options: {
+    datasetUrl?: string;
+    header: WasmHeaderInfo;
+    chunkIndices: number[];
+    signal?: AbortSignal;
+    onLog?: AuditLogger;
+  }): Promise<{
+    chunks: Map<number, { bytes: Uint8Array; sha256Hex: string }>;
+    bytesFetched: number;
+    rangeHeaders: string[];
+    httpStatuses: number[];
+  }> {
+    const datasetUrl = options.datasetUrl ?? DEFAULT_DATASET_URL;
+    const { header } = options;
+    const chunkSize = header.chunk_size;
+    const payloadOffset = header.payload_offset;
+
+    const sorted = [...new Set(options.chunkIndices)].sort((a, b) => a - b);
+    const runs: { firstIdx: number; count: number }[] = [];
+    for (const idx of sorted) {
+      if (idx < 0 || idx >= header.total_chunks) {
+        throw new Error(`Origin fallback chunk #${idx} out of bounds (0..${header.total_chunks - 1})`);
+      }
+      const last = runs[runs.length - 1];
+      if (last && last.firstIdx + last.count === idx) {
+        last.count += 1;
+      } else {
+        runs.push({ firstIdx: idx, count: 1 });
+      }
+    }
+
+    const chunks = new Map<number, { bytes: Uint8Array; sha256Hex: string }>();
+    let bytesFetched = 0;
+    const rangeHeaders: string[] = [];
+    const httpStatuses: number[] = [];
+
+    for (const run of runs) {
+      const start = payloadOffset + run.firstIdx * chunkSize;
+      const end = start + run.count * chunkSize - 1;
+      const rangeHeader = `bytes=${start}-${end}`;
+      const expectedLen = run.count * chunkSize;
+
+      const res = await fetch(datasetUrl, {
+        headers: { Range: rangeHeader },
+        signal: options.signal,
+      });
+
+      if (!res.ok && res.status !== 206) {
+        throw new Error(
+          `Origin fallback HTTP ${res.status} for ${datasetUrl} [${rangeHeader}]`
+        );
+      }
+
+      httpStatuses.push(res.status);
+      rangeHeaders.push(rangeHeader);
+
+      const rawBuf = await res.arrayBuffer();
+      const rawBytes = new Uint8Array(rawBuf);
+      const runBytes =
+        res.status === 206
+          ? rawBytes
+          : rawBytes.slice(start, Math.min(rawBytes.byteLength, start + expectedLen));
+
+      if (runBytes.byteLength !== expectedLen) {
+        throw new Error(
+          `Origin fallback truncated response: expected ${expectedLen} B, received ${runBytes.byteLength} B`
+        );
+      }
+
+      bytesFetched += runBytes.byteLength;
+      options.onLog?.(
+        `HTTP ${res.status} Origin Fallback [${rangeHeader}] (${runBytes.byteLength.toLocaleString()} B)`,
+        'network'
+      );
+
+      for (let i = 0; i < run.count; i++) {
+        const chunkIdx = run.firstIdx + i;
+        const slice = runBytes.slice(i * chunkSize, (i + 1) * chunkSize);
+        const { sha256Hex } = await decoderClient.verifyChunkHash(slice);
+        chunks.set(chunkIdx, { bytes: slice, sha256Hex });
+        this.injectVerifiedSwarmChunk(datasetUrl, chunkIdx, slice);
+      }
+    }
+
+    return { chunks, bytesFetched, rangeHeaders, httpStatuses };
+  }
 }
 
 export const plasmidContainerClient = new PlasmidContainerClient();

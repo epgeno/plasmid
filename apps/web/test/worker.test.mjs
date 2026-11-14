@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { resolveContentRange } from '../.wrangler/test-build/worker.js';
+import worker, {
+  resolveContentRange,
+  SwarmSignalingRelay,
+} from '../.wrangler/test-build/worker.js';
+import {
+  packSwarmPieceFrame,
+  unpackSwarmPieceFrame,
+  validateSwarmBatchPrivacy,
+  shouldInitiateWebRtc,
+} from '../.wrangler/test-build/services/webrtcSwarm.js';
 
 function createMockEnv(dataBytes) {
   return {
@@ -196,4 +205,237 @@ test('worker /api/data/* returns RFC 9110 Content-Range on 206, 200 on full GET,
   );
   assert.equal(invalidRes.status, 416);
   assert.equal(invalidRes.headers.get('content-range'), 'bytes */1000');
+});
+
+test('worker /api/swarm/signal relays announce/offer/answer/ice/leave per room and enforces RFC-0002/0003 & TTL', async () => {
+  const env = createMockEnv(new Uint8Array(64));
+  const rootHex = 'a'.repeat(64);
+
+  // 1. CORS OPTIONS preflight
+  const optRes = await worker.fetch(
+    new Request('https://plasmid.wiki/api/swarm/signal', { method: 'OPTIONS' }),
+    env
+  );
+  assert.equal(optRes.status, 204);
+  assert.equal(optRes.headers.get('access-control-allow-origin'), '*');
+
+  // 2. Seeder announces in room-alpha
+  const seederAnnounce = await worker.fetch(
+    new Request('https://plasmid.wiki/api/swarm/signal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room: 'clinvar-room-alpha',
+        fromPeerId: 'peer_seeder01',
+        role: 'seeder',
+        type: 'announce',
+        rootHashHex: rootHex,
+        totalChunks: 90,
+      }),
+    }),
+    env
+  );
+  assert.equal(seederAnnounce.status, 200);
+  const seederJson = await seederAnnounce.json();
+  assert.equal(seederJson.ok, true);
+  assert.equal(seederJson.peers.length, 0);
+
+  // 3. Leecher announces in room-alpha -> immediately discovers Seeder
+  const leecherAnnounce = await worker.fetch(
+    new Request('https://plasmid.wiki/api/swarm/signal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room: 'clinvar-room-alpha',
+        fromPeerId: 'peer_leecher01',
+        role: 'leecher',
+        type: 'announce',
+        rootHashHex: rootHex,
+        totalChunks: 90,
+      }),
+    }),
+    env
+  );
+  assert.equal(leecherAnnounce.status, 200);
+  const leecherJson = await leecherAnnounce.json();
+  assert.equal(leecherJson.peers.length, 1);
+  assert.equal(leecherJson.peers[0].peerId, 'peer_seeder01');
+  assert.equal(leecherJson.peers[0].role, 'seeder');
+
+  // 4. Room isolation: peer in room-beta sees 0 messages from room-alpha
+  const betaPoll = await worker.fetch(
+    new Request(
+      'https://plasmid.wiki/api/swarm/signal?room=clinvar-room-beta&peerId=peer_other99&after=0'
+    ),
+    env
+  );
+  const betaData = await betaPoll.json();
+  assert.equal(betaData.messages.length, 0);
+  assert.equal(betaData.peers.length, 0);
+
+  // 5. Directed SDP offer (leecher -> seeder) + answer (seeder -> leecher) + ICE
+  const offerPost = await worker.fetch(
+    new Request('https://plasmid.wiki/api/swarm/signal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room: 'clinvar-room-alpha',
+        fromPeerId: 'peer_leecher01',
+        toPeerId: 'peer_seeder01',
+        role: 'leecher',
+        type: 'offer',
+        payload: { type: 'offer', sdp: 'v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n' },
+      }),
+    }),
+    env
+  );
+  assert.equal(offerPost.status, 200);
+
+  // Third observer in same room must NOT receive directed offer meant for peer_seeder01
+  const observerPoll = await worker.fetch(
+    new Request(
+      'https://plasmid.wiki/api/swarm/signal?room=clinvar-room-alpha&peerId=peer_observer02&after=0'
+    ),
+    env
+  );
+  const obsData = await observerPoll.json();
+  assert.ok(obsData.messages.every((m) => m.type !== 'offer'));
+
+  // Seeder polls and receives both leecher's announce and directed offer
+  const seederPoll = await worker.fetch(
+    new Request(
+      `https://plasmid.wiki/api/swarm/signal?room=clinvar-room-alpha&peerId=peer_seeder01&after=${seederJson.seq}`
+    ),
+    env
+  );
+  const seederPollData = await seederPoll.json();
+  assert.equal(seederPollData.messages.length, 2);
+  assert.equal(seederPollData.messages[0].type, 'announce');
+  assert.equal(seederPollData.messages[1].type, 'offer');
+
+  // Leave removes peer from room presence
+  const leaveRes = await worker.fetch(
+    new Request('https://plasmid.wiki/api/swarm/signal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room: 'clinvar-room-alpha',
+        fromPeerId: 'peer_leecher01',
+        role: 'leecher',
+        type: 'leave',
+      }),
+    }),
+    env
+  );
+  assert.equal(leaveRes.status, 200);
+  const afterLeavePoll = await worker.fetch(
+    new Request(
+      'https://plasmid.wiki/api/swarm/signal?room=clinvar-room-alpha&peerId=peer_seeder01&after=0'
+    ),
+    env
+  );
+  const afterLeaveData = await afterLeavePoll.json();
+  assert.equal(afterLeaveData.peers.length, 0);
+
+  // 6. RFC-0003: proprietary room names (OMIM/COSMIC/HGMD/SNPedia) rejected with 403
+  const omimRes = await worker.fetch(
+    new Request('https://plasmid.wiki/api/swarm/signal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room: 'omim-private-pack',
+        fromPeerId: 'peer_bad01',
+        role: 'seeder',
+        type: 'announce',
+      }),
+    }),
+    env
+  );
+  assert.equal(omimRes.status, 403);
+
+  // 7. RFC-0002: raw VCF genomic lines in signaling payload rejected with 400
+  const vcfLeakRes = await worker.fetch(
+    new Request('https://plasmid.wiki/api/swarm/signal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room: 'clinvar-clean',
+        fromPeerId: 'peer_leak01',
+        role: 'leecher',
+        type: 'announce',
+        payload: '##fileformat=VCFv4.3\n#CHROM\tPOS\tID\nchr1\t100\trs1\n',
+      }),
+    }),
+    env
+  );
+  assert.equal(vcfLeakRes.status, 400);
+
+  // 8. Custom clock TTL pruning on SwarmSignalingRelay + HTTP 405 & 413 checks
+  let fakeNow = 1_000_000;
+  const relay = new SwarmSignalingRelay(() => fakeNow);
+  await relay.handleRequest(
+    new Request('https://plasmid.wiki/api/swarm/signal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        room: 'ttl-room',
+        fromPeerId: 'peer_ephemeral',
+        role: 'seeder',
+        type: 'announce',
+      }),
+    })
+  );
+  fakeNow += 65_000; // Advance past 45s peer TTL and 60s message TTL
+  const expiredPoll = await relay.handleRequest(
+    new Request('https://plasmid.wiki/api/swarm/signal?room=ttl-room&peerId=peer_watcher&after=0')
+  );
+  const expiredData = await expiredPoll.json();
+  assert.equal(expiredData.peers.length, 0);
+  assert.equal(expiredData.messages.length, 0);
+
+  const method405 = await relay.handleRequest(
+    new Request('https://plasmid.wiki/api/swarm/signal', { method: 'DELETE' })
+  );
+  assert.equal(method405.status, 405);
+
+  const large413 = await relay.handleRequest(
+    new Request('https://plasmid.wiki/api/swarm/signal', {
+      method: 'POST',
+      body: 'x'.repeat(40_000),
+    })
+  );
+  assert.equal(large413.status, 413);
+});
+
+test('WebRTC PLPK binary piece framing, glare-free initiator, and K-anonymity >=2 batch guard', () => {
+  // 1. K-anonymity guard rejects single-chunk requests on multi-chunk containers
+  const singleRejected = validateSwarmBatchPrivacy([7], 90);
+  assert.equal(singleRejected.ok, false);
+
+  const validBatch = validateSwarmBatchPrivacy([4, 5, 4], 90);
+  assert.equal(validBatch.ok, true);
+  assert.deepEqual(validBatch.uniqueIndices, [4, 5]);
+
+  // 2. Deterministic glare-free initiator: Leecher initiates to Seeder
+  assert.equal(shouldInitiateWebRtc('peer_aaa', 'leecher', 'peer_zzz', 'seeder'), true);
+  assert.equal(shouldInitiateWebRtc('peer_aaa', 'seeder', 'peer_zzz', 'leecher'), false);
+  assert.equal(shouldInitiateWebRtc('peer_aaa', 'leecher', 'peer_zzz', 'leecher'), false);
+
+  // 3. PLPK binary chunk packet roundtrip (16,384-byte payload)
+  const chunk = new Uint8Array(16384);
+  for (let i = 0; i < chunk.length; i++) chunk[i] = (i * 31) & 0xff;
+  const meta = {
+    requestId: 'batch_req_1',
+    chunkIndex: 3,
+    totalChunks: 90,
+    chunkSize: 16384,
+    leafSha256Hex: 'b'.repeat(64),
+    rootHashHex: 'c'.repeat(64),
+    proof: [{ sibling_hex: 'd'.repeat(64), is_right: true }],
+  };
+  const frame = packSwarmPieceFrame(meta, chunk);
+  const unpacked = unpackSwarmPieceFrame(frame.buffer);
+  assert.deepEqual(unpacked.meta, meta);
+  assert.equal(unpacked.chunkBytes.byteLength, 16384);
+  assert.deepEqual(unpacked.chunkBytes, chunk);
 });

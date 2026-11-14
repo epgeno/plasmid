@@ -26,6 +26,8 @@ import type {
   PyramidIndex,
   SlicingPlan,
   VcfVariantRecord,
+  WasmChunkMerkleBundle,
+  WasmChunkProofVerification,
   WasmDecodedSlice,
   WasmHeaderInfo,
   WasmIndexEntryInfo,
@@ -33,6 +35,7 @@ import type {
   WasmLeafPointerInfo,
   WasmLeafQueryPlan,
   WasmLocalPlasmidDatasetRaw,
+  WasmMerkleProofStep,
   WasmMerkleVerification,
   WasmVcfDatasetRaw,
 } from '../types/plasmid';
@@ -368,6 +371,34 @@ export async function handleWorkerRequest(
         payload.chunkSize,
         payload.expectedRootHex
       ) as WasmMerkleVerification;
+      return { verification };
+    }
+
+    case 'GENERATE_CHUNK_PROOFS': {
+      const payloadBytes = toUint8Array(payload.payloadBuffer);
+      const chunkIndices = new Uint32Array(payload.chunkIndices ?? []);
+      const bundles = PlasmidWasmEngine.generate_chunk_proofs(
+        payloadBytes,
+        payload.chunkSize,
+        chunkIndices
+      ) as WasmChunkMerkleBundle[];
+      return { bundles };
+    }
+
+    case 'VERIFY_MERKLE_CHUNK_PROOF': {
+      const chunkBytes = toUint8Array(payload.chunkBuffer);
+      const proofJson =
+        typeof payload.proofJson === 'string'
+          ? payload.proofJson
+          : JSON.stringify((payload.proof ?? []) as WasmMerkleProofStep[]);
+      const verification = PlasmidWasmEngine.verify_merkle_chunk_proof(
+        chunkBytes,
+        payload.chunkIndex,
+        payload.totalChunks,
+        payload.chunkSize,
+        payload.expectedRootHex,
+        proofJson
+      ) as WasmChunkProofVerification;
       return { verification };
     }
 

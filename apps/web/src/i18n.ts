@@ -224,6 +224,52 @@ export interface TranslationSchema {
   swarm: {
     title: string
     desc: string
+    liveConsoleTitle: string
+    liveConsoleDesc: string
+    publicOnlyBadge: string
+    roomLabel: string
+    roomPlaceholder: string
+    localPeerLabel: string
+    statusOffline: string
+    statusJoining: string
+    statusSeeding: (chunks: number) => string
+    statusLeeching: string
+    joinSeederBtn: string
+    joinLeecherBtn: string
+    leaveRoomBtn: string
+    kpiPeersLabel: string
+    kpiPeersSub: (connected: number, banned: number) => string
+    kpiRttLabel: string
+    kpiRttSub: string
+    kpiBytesLabel: string
+    kpiBytesSub: (rx: string, tx: string) => string
+    kpiVerifyLabel: string
+    kpiVerifySub: (verified: number, rejected: number, fallback: number) => string
+    actionsTitle: string
+    batchSelectLabel: string
+    kAnonBadge: string
+    requestBatchBtn: (c1: number, c2: number) => string
+    requestingBtn: string
+    byzantineDemoBtn: string
+    singleChunkProbeBtn: string
+    seederByzantineToggle: string
+    seederReadyNote: (chunks: number) => string
+    connectSeederHint: string
+    lastTransferP2p: (chunks: string, bytes: string, ms: number) => string
+    lastTransferFallback: (bannedPeer: string, range: string, bytes: string) => string
+    peersSectionTitle: (count: number) => string
+    peersEmpty: string
+    peerRoleSeeder: string
+    peerRoleLeecher: string
+    peerStatusConnecting: string
+    peerStatusConnected: string
+    peerStatusDisconnected: string
+    peerStatusBanned: string
+    peerRttCol: string
+    peerTransferCol: string
+    peerVerifyCol: string
+    auditSectionTitle: string
+    auditEmpty: string
     containerPackTitle: string
     directoryArchTitle: string
     hierarchicalDesc: (leaves: number) => string
@@ -483,8 +529,54 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       citationsNote: '주석 블록 내 추출된 공식 PMID 식별자',
     },
     swarm: {
-      title: 'BEP 52 머클 청크 구조 & 프라이버시 아키텍처',
-      desc: '현재 로드된 .plasmid 아카이브의 실제 16KB 머클 청크 구성과 프라이버시 격리 정책을 표시합니다.',
+      title: 'WebRTC P2P 머클 스웜 & 프라이버시 무결성',
+      desc: '실제 RTCPeerConnection + RTCDataChannel로 공공 .plasmid 16KB 머클 청크를 피어 간 교환하고, 변조 청크 수신 시 자동 차단 및 HTTP 206 Origin 폴백을 수행합니다.',
+      liveConsoleTitle: '실시간 WebRTC DataChannel 스웜 콘솔',
+      liveConsoleDesc: '동일한 스웜 룸 ID로 두 개 이상의 브라우저 탭/기기가 참여하면 /api/swarm/signal 시그널링을 거쳐 직접 P2P 연결됩니다.',
+      publicOnlyBadge: '공공 ClinVar 팩 전용 • 개인 볼트 0 B 격리',
+      roomLabel: '스웜 룸 ID',
+      roomPlaceholder: '예: clinvar-grch38',
+      localPeerLabel: '내 피어 ID',
+      statusOffline: '오프라인 (미참여)',
+      statusJoining: '시그널링 및 검증 중…',
+      statusSeeding: (chunks) => `시더 활성 (${chunks}개 16KB 청크 검증됨)`,
+      statusLeeching: '리처 활성 (128B 헤더 루트 고정)',
+      joinSeederBtn: '시더(Seeder)로 참여',
+      joinLeecherBtn: '리처(Leecher)로 참여',
+      leaveRoomBtn: '스웜 연결 해제',
+      kpiPeersLabel: '연결 피어 / 차단',
+      kpiPeersSub: (conn, banned) => `연결 ${conn}명 · 비잔틴 차단 ${banned}명`,
+      kpiRttLabel: '실측 WebRTC RTT',
+      kpiRttSub: 'RTCDataChannel PING/PONG',
+      kpiBytesLabel: 'P2P 전송 바이트',
+      kpiBytesSub: (rx, tx) => `수신 ${rx} · 송신 ${tx}`,
+      kpiVerifyLabel: '머클 검증 & 폴백',
+      kpiVerifySub: (ok, bad, fb) => `통과 ${ok} · 거부 ${bad} · 206폴백 ${fb}`,
+      actionsTitle: '16KB 리프 청크 배치 교환 & 비잔틴 방어 실증',
+      batchSelectLabel: '요청 청크 배치',
+      kAnonBadge: '최소 2청크(32KB) K-익명성 강제',
+      requestBatchBtn: (c1, c2) => `16KB 청크 P2P 배치 요청 (#${c1}, #${c2})`,
+      requestingBtn: 'RTCDataChannel 전송 중…',
+      byzantineDemoBtn: '변조 청크(Byzantine) 주입 → 자동 차단 & Origin 206 폴백 실증',
+      singleChunkProbeBtn: '단일 청크 요청 거부 검증 (K-익명성)',
+      seederByzantineToggle: '다음 P2P 응답에 변조 바이트 송출 (Byzantine Seeder 테스트 모드)',
+      seederReadyNote: (chunks) => `현재 시더 모드입니다. 연결된 리처에게 ${chunks}개의 검증된 16KB 머클 리프 청크와 BEP 52 증명을 전송합니다.`,
+      connectSeederHint: '동일 룸에 연결된 시더(Seeder) 피어가 있어야 실시간 P2P 청크 교환 및 비잔틴 차단 실증을 실행할 수 있습니다.',
+      lastTransferP2p: (chunks, bytes, ms) => `WebRTC P2P 검증 완료: 청크 [${chunks}] (${bytes}, ${ms} ms) — WASM BEP 52 머클 루트 일치`,
+      lastTransferFallback: (peer, range, bytes) => `비잔틴 피어(${peer}) 즉시 차단 완료 → Origin HTTP 206 폴백 복구 [${range}] (${bytes})`,
+      peersSectionTitle: (count) => `실시간 스웜 피어 연결 상태 (${count})`,
+      peersEmpty: '현재 연결된 원격 피어가 없습니다. 다른 브라우저 탭이나 세션에서 동일 스웜 룸으로 참여하세요.',
+      peerRoleSeeder: '시더 (Seeder)',
+      peerRoleLeecher: '리처 (Leecher)',
+      peerStatusConnecting: '연결 협상 중',
+      peerStatusConnected: 'DataChannel 연결됨',
+      peerStatusDisconnected: '연결 종료',
+      peerStatusBanned: '비잔틴 차단됨 (BANNED)',
+      peerRttCol: '실측 RTT',
+      peerTransferCol: 'P2P 송수신',
+      peerVerifyCol: 'SHA-256 검증',
+      auditSectionTitle: '실시간 WebRTC 시그널링 & 머클 검증 로그',
+      auditEmpty: '아직 스웜 이벤트가 없습니다. 시더 또는 리처로 룸에 참여하면 실제 협상·검증 기록이 표시됩니다.',
       containerPackTitle: '로드된 .plasmid 컨테이너 사양',
       directoryArchTitle: '디렉터리 색인 구조',
       hierarchicalDesc: (leaves) => `2단계 계층형 리프 (${leaves}개 리프)`,
@@ -742,8 +834,54 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       citationsNote: 'Extracted from decoded annotation blocks',
     },
     swarm: {
-      title: 'BEP 52 Merkle Layout & Privacy Isolation',
-      desc: 'Displays live chunk geometry from the loaded .plasmid header alongside RFC-0002/0003 privacy isolation guarantees.',
+      title: 'WebRTC P2P Merkle Swarm & Integrity Shield',
+      desc: 'Exchanges authentic 16KB .plasmid Merkle chunks across browser peers via RTCPeerConnection + RTCDataChannel with instant Byzantine peer banning and HTTP 206 Origin fallback.',
+      liveConsoleTitle: 'Live WebRTC DataChannel Swarm Console',
+      liveConsoleDesc: 'Join the same swarm room across two or more browser tabs/devices to negotiate direct P2P data channels via /api/swarm/signal.',
+      publicOnlyBadge: 'Public ClinVar Pack Only • Private Vault 0 B Air-Gapped',
+      roomLabel: 'Swarm Room ID',
+      roomPlaceholder: 'e.g. clinvar-grch38',
+      localPeerLabel: 'Local Peer ID',
+      statusOffline: 'Offline (Not Joined)',
+      statusJoining: 'Negotiating & Verifying…',
+      statusSeeding: (chunks) => `Seeding (${chunks} × 16KB chunks verified)`,
+      statusLeeching: 'Leeching (128B Header Root Pinned)',
+      joinSeederBtn: 'Join as Seeder',
+      joinLeecherBtn: 'Join as Leecher',
+      leaveRoomBtn: 'Leave Swarm',
+      kpiPeersLabel: 'Connected / Banned',
+      kpiPeersSub: (conn, banned) => `${conn} connected · ${banned} banned`,
+      kpiRttLabel: 'Measured WebRTC RTT',
+      kpiRttSub: 'RTCDataChannel PING/PONG',
+      kpiBytesLabel: 'P2P DataChannel Bytes',
+      kpiBytesSub: (rx, tx) => `RX ${rx} · TX ${tx}`,
+      kpiVerifyLabel: 'Merkle Check & Fallback',
+      kpiVerifySub: (ok, bad, fb) => `${ok} verified · ${bad} blocked · ${fb} HTTP 206`,
+      actionsTitle: '16KB Leaf Chunk Batch Exchange & Byzantine Defense',
+      batchSelectLabel: 'Chunk Batch Pair',
+      kAnonBadge: 'Min 2 Chunks (32 KB) K-Anonymity',
+      requestBatchBtn: (c1, c2) => `Request 16KB Chunk Batch (#${c1}, #${c2})`,
+      requestingBtn: 'Transferring over RTCDataChannel…',
+      byzantineDemoBtn: 'Inject Tampered Chunk (Byzantine) → Auto-Ban & HTTP 206 Fallback',
+      singleChunkProbeBtn: 'Test Single-Chunk Rejection (K-Anonymity)',
+      seederByzantineToggle: 'Mutate outgoing chunk bytes on wire (Byzantine Seeder Test Mode)',
+      seederReadyNote: (chunks) => `Active Seeder node: serving ${chunks} Merkle-verified 16KB leaf chunks + BEP 52 audit proofs over RTCDataChannel.`,
+      connectSeederHint: 'Connect at least one Seeder peer in the same room to run live P2P chunk transfers and Byzantine ban/fallback verification.',
+      lastTransferP2p: (chunks, bytes, ms) => `WebRTC P2P Verified: chunks [${chunks}] (${bytes} in ${ms} ms) — WASM BEP 52 Merkle proof matched`,
+      lastTransferFallback: (peer, range, bytes) => `Banned Byzantine peer (${peer}) → Recovered via Origin HTTP 206 Fallback [${range}] (${bytes})`,
+      peersSectionTitle: (count) => `Live Swarm Peer Connections (${count})`,
+      peersEmpty: 'No remote peers connected yet. Open another browser tab or session and join the same Swarm Room ID.',
+      peerRoleSeeder: 'Seeder',
+      peerRoleLeecher: 'Leecher',
+      peerStatusConnecting: 'Connecting',
+      peerStatusConnected: 'DataChannel Open',
+      peerStatusDisconnected: 'Disconnected',
+      peerStatusBanned: 'BANNED (Byzantine)',
+      peerRttCol: 'Live RTT',
+      peerTransferCol: 'P2P RX / TX',
+      peerVerifyCol: 'SHA-256 Check',
+      auditSectionTitle: 'Live WebRTC Signaling & Merkle Audit Log',
+      auditEmpty: 'No swarm events recorded yet. Join a room as Seeder or Leecher to inspect real WebRTC and SHA-256 verification logs.',
       containerPackTitle: 'Loaded .plasmid Container Geometry',
       directoryArchTitle: 'Directory Architecture',
       hierarchicalDesc: (leaves) => `2-Stage PMTiles Leaf (${leaves} leaves)`,
@@ -1001,8 +1139,54 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       citationsNote: '提取自解码注释块中的 PMID',
     },
     swarm: {
-      title: 'BEP 52 默克尔分块结构与隐私隔离',
-      desc: '展示当前加载 .plasmid 容器的真实分块参数及隐私隔离策略。',
+      title: 'WebRTC P2P 默克尔集群与完整性防护',
+      desc: '通过真实的 RTCPeerConnection + RTCDataChannel 在浏览器节点间交换 16KB .plasmid 默克尔块，并在检出篡改数据时自动封禁节点并回退至 HTTP 206 源站。',
+      liveConsoleTitle: '实时 WebRTC DataChannel 集群控制台',
+      liveConsoleDesc: '在两个或多个浏览器标签页加入相同的集群房间 ID，即可经由 /api/swarm/signal 建立端到端 P2P 数据通道。',
+      publicOnlyBadge: '仅限公共 ClinVar 包 • 私有保险库 0 B 隔离',
+      roomLabel: '集群房间 ID',
+      roomPlaceholder: '例如: clinvar-grch38',
+      localPeerLabel: '本机节点 ID',
+      statusOffline: '离线（未加入）',
+      statusJoining: '正在信令协商与校验…',
+      statusSeeding: (chunks) => `做种中（已校验 ${chunks} 个 16KB 块）`,
+      statusLeeching: '下载节点已就绪（已锁定 128B 头部根哈希）',
+      joinSeederBtn: '作为做种节点(Seeder)加入',
+      joinLeecherBtn: '作为下载节点(Leecher)加入',
+      leaveRoomBtn: '离开集群房间',
+      kpiPeersLabel: '已连接 / 已封禁',
+      kpiPeersSub: (conn, banned) => `连接 ${conn} · 拜占庭封禁 ${banned}`,
+      kpiRttLabel: '实测 WebRTC 延迟',
+      kpiRttSub: 'RTCDataChannel PING/PONG',
+      kpiBytesLabel: 'P2P 传输字节',
+      kpiBytesSub: (rx, tx) => `接收 ${rx} · 发送 ${tx}`,
+      kpiVerifyLabel: '默克尔校验与回退',
+      kpiVerifySub: (ok, bad, fb) => `通过 ${ok} · 拦截 ${bad} · 206回退 ${fb}`,
+      actionsTitle: '16KB 叶数据块批量交换与拜占庭防御验证',
+      batchSelectLabel: '请求数据块批次',
+      kAnonBadge: '强制最少 2 块 (32 KB) K-匿名保护',
+      requestBatchBtn: (c1, c2) => `P2P 请求 16KB 数据块批次 (#${c1}, #${c2})`,
+      requestingBtn: '正在通过 RTCDataChannel 传输…',
+      byzantineDemoBtn: '注入篡改块(Byzantine) → 自动封禁并回退 HTTP 206 源站',
+      singleChunkProbeBtn: '验证单块请求拦截 (K-匿名守卫)',
+      seederByzantineToggle: '在下次 P2P 响应中注入篡改字节（拜占庭做种测试模式）',
+      seederReadyNote: (chunks) => `当前为做种节点模式，可向已连接节点提供全部 ${chunks} 个经默克尔校验的 16KB 数据块及 BEP 52 证明。`,
+      connectSeederHint: '请先在同一房间连接至少一个做种节点(Seeder)，以运行实时 P2P 分块交换及拜占庭封禁回退验证。',
+      lastTransferP2p: (chunks, bytes, ms) => `WebRTC P2P 校验通过：数据块 [${chunks}]（${bytes}，${ms} ms）— WASM BEP 52 默克尔根一致`,
+      lastTransferFallback: (peer, range, bytes) => `已封禁拜占庭节点 (${peer}) → 已通过源站 HTTP 206 回退恢复 [${range}] (${bytes})`,
+      peersSectionTitle: (count) => `实时集群节点列表 (${count})`,
+      peersEmpty: '当前房间暂无远程节点连接。请在另一浏览器标签页或会话中加入相同房间 ID。',
+      peerRoleSeeder: '做种节点 (Seeder)',
+      peerRoleLeecher: '下载节点 (Leecher)',
+      peerStatusConnecting: '正在握手连接',
+      peerStatusConnected: 'DataChannel 已连接',
+      peerStatusDisconnected: '已断开',
+      peerStatusBanned: '已封禁 (Byzantine)',
+      peerRttCol: '实测 RTT',
+      peerTransferCol: 'P2P 收发量',
+      peerVerifyCol: 'SHA-256 校验',
+      auditSectionTitle: '实时 WebRTC 信令与默克尔审计日志',
+      auditEmpty: '尚无集群事件记录。加入房间后将实时显示信令协商与 SHA-256 默克尔校验明细。',
       containerPackTitle: '当前 .plasmid 容器参数',
       directoryArchTitle: '目录索引架构',
       hierarchicalDesc: (leaves) => `二级分层叶索引（${leaves} 个叶块）`,
@@ -1260,8 +1444,54 @@ export const TRANSLATIONS: Record<SupportedLanguage, TranslationSchema> = {
       citationsNote: 'デコード済み注釈ブロックから抽出された PMID',
     },
     swarm: {
-      title: 'BEP 52 マークル構造＆プライバシー隔離',
-      desc: '読み込まれた .plasmid ヘッダーの実チャンク構成とプライバシー保護仕様を表示します。',
+      title: 'WebRTC P2P マークルスウォーム＆完全性保護',
+      desc: '実際の RTCPeerConnection + RTCDataChannel を通じて 16KB .plasmid マークルチャンクをピア間で交換し、改ざん検出時は即時遮断と HTTP 206 オリジンフォールバックを実行します。',
+      liveConsoleTitle: 'リアルタイム WebRTC DataChannel スウォームコンソール',
+      liveConsoleDesc: '複数のブラウザタブや端末から同じルームIDに参加すると、/api/swarm/signal 経由で直接 P2P データチャネルを確立します。',
+      publicOnlyBadge: '公共 ClinVar パック専用 • 個人保管庫 0 B 隔離',
+      roomLabel: 'スウォームルーム ID',
+      roomPlaceholder: '例: clinvar-grch38',
+      localPeerLabel: '自ピア ID',
+      statusOffline: 'オフライン（未参加）',
+      statusJoining: 'シグナリング・検証中…',
+      statusSeeding: (chunks) => `シーダー稼働中（${chunks} 個の 16KB チャンク検証済）`,
+      statusLeeching: 'リーチャー稼働中（128B ヘッダールート固定）',
+      joinSeederBtn: 'シーダー(Seeder)として参加',
+      joinLeecherBtn: 'リーチャー(Leecher)として参加',
+      leaveRoomBtn: 'スウォームから退出',
+      kpiPeersLabel: '接続ピア / 遮断',
+      kpiPeersSub: (conn, banned) => `接続 ${conn} · ビザンチン遮断 ${banned}`,
+      kpiRttLabel: '実測 WebRTC RTT',
+      kpiRttSub: 'RTCDataChannel PING/PONG',
+      kpiBytesLabel: 'P2P 転送バイト',
+      kpiBytesSub: (rx, tx) => `受信 ${rx} · 送信 ${tx}`,
+      kpiVerifyLabel: 'マークル検証＆復旧',
+      kpiVerifySub: (ok, bad, fb) => `合格 ${ok} · 拒否 ${bad} · 206復旧 ${fb}`,
+      actionsTitle: '16KB リーフチャンク一括交換＆ビザンチン防御実証',
+      batchSelectLabel: '要求チャンクバッチ',
+      kAnonBadge: '最小2チャンク(32KB) K-匿名性強制',
+      requestBatchBtn: (c1, c2) => `16KB チャンク P2P バッチ要求 (#${c1}, #${c2})`,
+      requestingBtn: 'RTCDataChannel 転送中…',
+      byzantineDemoBtn: '改ざんチャンク(Byzantine)注入 → 自動遮断＆Origin 206 フォールバック実証',
+      singleChunkProbeBtn: '単一チャンク要求拒否を検証 (K-匿名性)',
+      seederByzantineToggle: '次回の P2P 応答に改ざんバイトを送出（Byzantine Seeder テストモード）',
+      seederReadyNote: (chunks) => `現在シーダーモードです。接続されたリーチャーへ検証済み 16KB マークルチャンク ${chunks} 個と BEP 52 証明を配信します。`,
+      connectSeederHint: 'リアルタイム P2P チャンク交換およびビザンチン遮断実証を実行するには、同一ルームにシーダー(Seeder)を接続してください。',
+      lastTransferP2p: (chunks, bytes, ms) => `WebRTC P2P 検証完了: チャンク [${chunks}] (${bytes}, ${ms} ms) — WASM BEP 52 マークルルート一致`,
+      lastTransferFallback: (peer, range, bytes) => `ビザンチンピア (${peer}) を即時遮断 → Origin HTTP 206 フォールバック復旧 [${range}] (${bytes})`,
+      peersSectionTitle: (count) => `リアルタイム接続ピア一覧 (${count})`,
+      peersEmpty: '現在接続されているリモートピアはありません。別のブラウザタブで同じルームIDに参加してください。',
+      peerRoleSeeder: 'シーダー (Seeder)',
+      peerRoleLeecher: 'リーチャー (Leecher)',
+      peerStatusConnecting: '接続交渉中',
+      peerStatusConnected: 'DataChannel 接続済',
+      peerStatusDisconnected: '切断',
+      peerStatusBanned: '遮断済 (BANNED)',
+      peerRttCol: '実測 RTT',
+      peerTransferCol: 'P2P 送受信',
+      peerVerifyCol: 'SHA-256 検証',
+      auditSectionTitle: 'WebRTC シグナリング＆マークル検証監査ログ',
+      auditEmpty: 'スウォームイベントはまだありません。ルームに参加すると実際の交渉・ハッシュ検証ログが表示されます。',
       containerPackTitle: '読み込み済み .plasmid コンテナ仕様',
       directoryArchTitle: 'ディレクトリ索引構造',
       hierarchicalDesc: (leaves) => `2段階階層リーフ索引 (${leaves} リーフ)`,
