@@ -60,7 +60,91 @@ const ROOM_NAME_RE = /^[a-zA-Z0-9._:-]{3,64}$/;
 const PEER_ID_RE = /^[a-zA-Z0-9_-]{4,64}$/;
 const HEX_64_RE = /^[0-9a-fA-F]{64}$/;
 const PROPRIETARY_ROOM_TOKENS = ['omim', 'cosmic', 'hgmd', 'snpedia'];
-const RAW_GENOME_LEAK_RE = /##fileformat=VCF|#CHROM\tPOS|#\s*rsid\tchromosome/i;
+const RAW_GENOME_LEAK_RE =
+  /##fileformat=VCF|#CHROM(?:\\t|\t)POS|#\s*rsid(?:\\t|\t)chromosome/i;
+const DECODED_GENOME_LEAK_RE =
+  /##fileformat=VCF|#CHROM\tPOS|#\s*rsid\tchromosome|(?:^|\r?\n)(?:chr)?(?:[1-9]|1\d|2[0-2]|X|Y|M|MT)\t\d+\t[^\t\r\n]+\t[ACGTN]+\t|(?:^|\r?\n)(?:rs|i)\d+\t(?:[1-9]|1\d|2[0-2]|X|Y|MT)\t\d+\t[ACGTDI-]{1,2}(?:\r?\n|$)/i;
+
+function containsDecodedGenomeLeak(val: unknown, depth = 0): boolean {
+  if (depth > 8 || val === null || val === undefined) return false;
+  if (typeof val === 'string') {
+    return DECODED_GENOME_LEAK_RE.test(val);
+  }
+  if (Array.isArray(val)) {
+    return val.some((item) => containsDecodedGenomeLeak(item, depth + 1));
+  }
+  if (typeof val === 'object') {
+    for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
+      if (DECODED_GENOME_LEAK_RE.test(k) || containsDecodedGenomeLeak(v, depth + 1)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function normalizeAndValidateSignalPayload(
+  signalType: SwarmSignalType,
+  rawPayload: unknown
+): { ok: boolean; sanitized: unknown; error: string } {
+  if (signalType === 'announce' || signalType === 'leave') {
+    if (rawPayload !== undefined && rawPayload !== null) {
+      return {
+        ok: false,
+        sanitized: null,
+        error: `Signal type "${signalType}" must not include an arbitrary payload`,
+      };
+    }
+    return { ok: true, sanitized: null, error: '' };
+  }
+
+  if (signalType === 'offer' || signalType === 'answer') {
+    if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+      return {
+        ok: false,
+        sanitized: null,
+        error: `Signal type "${signalType}" requires an SDP payload object`,
+      };
+    }
+    const rec = rawPayload as Record<string, unknown>;
+    if (rec.type !== signalType || typeof rec.sdp !== 'string' || !rec.sdp.startsWith('v=0')) {
+      return {
+        ok: false,
+        sanitized: null,
+        error: `Invalid WebRTC SDP ${signalType} payload (expected { type: "${signalType}", sdp: "v=0..." })`,
+      };
+    }
+    return { ok: true, sanitized: { type: signalType, sdp: rec.sdp }, error: '' };
+  }
+
+  // signalType === 'ice'
+  if (!rawPayload || typeof rawPayload !== 'object' || Array.isArray(rawPayload)) {
+    return {
+      ok: false,
+      sanitized: null,
+      error: 'Signal type "ice" requires an RTCIceCandidateInit object',
+    };
+  }
+  const ice = rawPayload as Record<string, unknown>;
+  if (typeof ice.candidate !== 'string') {
+    return {
+      ok: false,
+      sanitized: null,
+      error: 'Invalid ICE candidate payload (missing candidate string)',
+    };
+  }
+  return {
+    ok: true,
+    sanitized: {
+      candidate: ice.candidate,
+      sdpMid: typeof ice.sdpMid === 'string' ? ice.sdpMid : null,
+      sdpMLineIndex: typeof ice.sdpMLineIndex === 'number' ? ice.sdpMLineIndex : null,
+      usernameFragment:
+        typeof ice.usernameFragment === 'string' ? ice.usernameFragment : null,
+    },
+    error: '',
+  };
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -269,6 +353,20 @@ export class SwarmSignalingRelay {
         return jsonResponse({ error: 'Invalid JSON body' }, 400);
       }
 
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return jsonResponse({ error: 'Invalid JSON signaling envelope' }, 400);
+      }
+
+      if (containsDecodedGenomeLeak(body)) {
+        return jsonResponse(
+          {
+            error:
+              'RFC-0002 Air-Gap violation: raw VCF/23andMe genomic records are strictly prohibited on signaling endpoints',
+          },
+          400
+        );
+      }
+
       const room = typeof body.room === 'string' ? body.room.trim() : '';
       const fromPeerId =
         typeof body.fromPeerId === 'string' ? body.fromPeerId.trim() : '';
@@ -318,6 +416,11 @@ export class SwarmSignalingRelay {
           { error: `Signal type "${body.type}" requires a target toPeerId` },
           400
         );
+      }
+
+      const payloadCheck = normalizeAndValidateSignalPayload(body.type, body.payload);
+      if (!payloadCheck.ok) {
+        return jsonResponse({ error: payloadCheck.error }, 400);
       }
 
       const cleanRootHex =
@@ -401,7 +504,7 @@ export class SwarmSignalingRelay {
         type: body.type,
         rootHashHex: cleanRootHex ?? prev?.rootHashHex ?? null,
         totalChunks: totalChunks ?? prev?.totalChunks ?? null,
-        payload: body.payload ?? null,
+        payload: payloadCheck.sanitized,
         createdAt: now,
       });
 

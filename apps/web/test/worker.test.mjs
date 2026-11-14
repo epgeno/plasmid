@@ -353,22 +353,65 @@ test('worker /api/swarm/signal relays announce/offer/answer/ice/leave per room a
   );
   assert.equal(omimRes.status, 403);
 
-  // 7. RFC-0002: raw VCF genomic lines in signaling payload rejected with 400
-  const vcfLeakRes = await worker.fetch(
-    new Request('https://plasmid.wiki/api/swarm/signal', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        room: 'clinvar-clean',
-        fromPeerId: 'peer_leak01',
-        role: 'leecher',
-        type: 'announce',
-        payload: '##fileformat=VCFv4.3\n#CHROM\tPOS\tID\nchr1\t100\trs1\n',
+  // 7. RFC-0002: raw VCF / headerless #CHROM\tPOS / 23andMe / arbitrary announce payload rejected with 400 & 0 stored records
+  for (const leakBody of [
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_leak01',
+      role: 'leecher',
+      type: 'announce',
+      payload: '##fileformat=VCFv4.3\n#CHROM\tPOS\tID\nchr1\t100\trs1\n',
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_leak02',
+      role: 'leecher',
+      type: 'announce',
+      payload: '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\nchr17\t43094464\trs80357906\tG\tA\t.\tPASS\t.',
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_leak03',
+      role: 'leecher',
+      type: 'announce',
+      payload: '# rsid\tchromosome\tposition\tgenotype\nrs4477212\t1\t82154\tAA',
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_leak04',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'offer',
+      payload: {
+        type: 'offer',
+        sdp: 'v=0\r\nchr17\t43094464\trs80357906\tG\tA\t.\tPASS\t.\r\n',
+      },
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_leak05',
+      role: 'leecher',
+      type: 'announce',
+      payload: { arbitrary: 'unexpected-announce-body' },
+    },
+  ]) {
+    const vcfLeakRes = await worker.fetch(
+      new Request('https://plasmid.wiki/api/swarm/signal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(leakBody),
       }),
-    }),
+      env
+    );
+    assert.equal(vcfLeakRes.status, 400);
+  }
+  const cleanRoomCheck = await worker.fetch(
+    new Request('https://plasmid.wiki/api/swarm/signal?room=clinvar-clean&peerId=qa_probe&after=0'),
     env
   );
-  assert.equal(vcfLeakRes.status, 400);
+  const cleanRoomData = await cleanRoomCheck.json();
+  assert.equal(cleanRoomData.peers.length, 0);
+  assert.equal(cleanRoomData.messages.length, 0);
 
   // 8. Custom clock TTL pruning on SwarmSignalingRelay + HTTP 405 & 413 checks
   let fakeNow = 1_000_000;
