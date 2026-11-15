@@ -60,22 +60,55 @@ const ROOM_NAME_RE = /^[a-zA-Z0-9._:-]{3,64}$/;
 const PEER_ID_RE = /^[a-zA-Z0-9_-]{4,64}$/;
 const HEX_64_RE = /^[0-9a-fA-F]{64}$/;
 const PROPRIETARY_ROOM_TOKENS = ['omim', 'cosmic', 'hgmd', 'snpedia'];
+const ALLOWED_ENVELOPE_KEYS = new Set([
+  'room',
+  'fromPeerId',
+  'toPeerId',
+  'role',
+  'type',
+  'rootHashHex',
+  'totalChunks',
+  'payload',
+]);
+const ALLOWED_SDP_KEYS = new Set(['type', 'sdp']);
+const ALLOWED_ICE_KEYS = new Set([
+  'candidate',
+  'sdpMid',
+  'sdpMLineIndex',
+  'usernameFragment',
+]);
+const SDP_LINE_RE = /^[a-z]=[\x20-\x7e]+$/;
+const ICE_CANDIDATE_RE =
+  /^(?:a=)?candidate:[A-Za-z0-9+/=._:-]{1,64}\s+\d{1,5}\s+(?:udp|tcp|UDP|TCP)\s+\d{1,12}\s+[A-Za-z0-9.:%-]{1,128}\s+\d{1,5}\s+typ\s+(?:host|srflx|prflx|relay)(?:\s+(?:raddr|rport|tcptype|generation|ufrag|network-id|network-cost)\s+[A-Za-z0-9.+/=_%:-]{1,64})*$/;
+const ICE_SDPMID_RE = /^[A-Za-z0-9._-]{1,32}$/;
+const ICE_UFRAG_RE = /^[A-Za-z0-9+/=._:-]{1,64}$/;
+
 const RAW_GENOME_LEAK_RE =
-  /##fileformat=VCF|#CHROM(?:\\t|\t)POS|#\s*rsid(?:\\t|\t)chromosome/i;
+  /##fileformat=VCF|#CHROM(?:\\t|\t|\s)+POS|#\s*rsid(?:\\t|\t|\s)+chromosome/i;
 const DECODED_GENOME_LEAK_RE =
-  /##fileformat=VCF|#CHROM\tPOS|#\s*rsid\tchromosome|(?:^|\r?\n)(?:chr)?(?:[1-9]|1\d|2[0-2]|X|Y|M|MT)\t\d+\t[^\t\r\n]+\t[ACGTN]+\t|(?:^|\r?\n)(?:rs|i)\d+\t(?:[1-9]|1\d|2[0-2]|X|Y|MT)\t\d+\t[ACGTDI-]{1,2}(?:\r?\n|$)/i;
+  /##fileformat=VCF|#CHROM[\t\s]+POS|#\s*rsid[\t\s]+chromosome|(?:chr)?(?:[1-9]|1\d|2[0-2]|X|Y|M|MT)[\t\s]+\d{2,9}[\t\s]+(?:rs\d+|\.)[\t\s]+[ACGTN]+[\t\s]+[ACGTN.]+\b|\b(?:rs|i)\d{3,12}[\t\s]+(?:[1-9]|1\d|2[0-2]|X|Y|MT)[\t\s]+\d{2,9}[\t\s]+[ACGTDI-]{1,2}(?:[\t\s]+[ACGTDI-]{1,2})?(?:\b|$)/i;
+
+function hasUnknownKeys(obj: Record<string, unknown>, allowed: Set<string>): string | null {
+  for (const key of Object.keys(obj)) {
+    if (!allowed.has(key)) {
+      return key;
+    }
+  }
+  return null;
+}
 
 function containsDecodedGenomeLeak(val: unknown, depth = 0): boolean {
-  if (depth > 8 || val === null || val === undefined) return false;
+  if (val === null || val === undefined) return false;
+  if (depth > 8) return true; // Fail-closed on excessive nesting
   if (typeof val === 'string') {
-    return DECODED_GENOME_LEAK_RE.test(val);
+    return val.includes('\t') || DECODED_GENOME_LEAK_RE.test(val);
   }
   if (Array.isArray(val)) {
     return val.some((item) => containsDecodedGenomeLeak(item, depth + 1));
   }
   if (typeof val === 'object') {
     for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
-      if (DECODED_GENOME_LEAK_RE.test(k) || containsDecodedGenomeLeak(v, depth + 1)) {
+      if (k.includes('\t') || DECODED_GENOME_LEAK_RE.test(k) || containsDecodedGenomeLeak(v, depth + 1)) {
         return true;
       }
     }
@@ -107,11 +140,33 @@ function normalizeAndValidateSignalPayload(
       };
     }
     const rec = rawPayload as Record<string, unknown>;
-    if (rec.type !== signalType || typeof rec.sdp !== 'string' || !rec.sdp.startsWith('v=0')) {
+    const badKey = hasUnknownKeys(rec, ALLOWED_SDP_KEYS);
+    if (badKey !== null) {
       return {
         ok: false,
         sanitized: null,
-        error: `Invalid WebRTC SDP ${signalType} payload (expected { type: "${signalType}", sdp: "v=0..." })`,
+        error: `Unknown key "${badKey}" in ${signalType} SDP payload`,
+      };
+    }
+    if (
+      rec.type !== signalType ||
+      typeof rec.sdp !== 'string' ||
+      rec.sdp.length > 24_576 ||
+      rec.sdp.includes('\t') ||
+      !rec.sdp.startsWith('v=0')
+    ) {
+      return {
+        ok: false,
+        sanitized: null,
+        error: `Invalid WebRTC SDP ${signalType} payload (expected RFC 8866 v=0 SDP without tabs)`,
+      };
+    }
+    const lines = rec.sdp.split(/\r?\n/).filter((l) => l.length > 0);
+    if (lines.length < 2 || lines.some((line) => !SDP_LINE_RE.test(line))) {
+      return {
+        ok: false,
+        sanitized: null,
+        error: `Invalid RFC 8866 SDP line syntax in ${signalType} payload`,
       };
     }
     return { ok: true, sanitized: { type: signalType, sdp: rec.sdp }, error: '' };
@@ -126,12 +181,48 @@ function normalizeAndValidateSignalPayload(
     };
   }
   const ice = rawPayload as Record<string, unknown>;
-  if (typeof ice.candidate !== 'string') {
+  const badIceKey = hasUnknownKeys(ice, ALLOWED_ICE_KEYS);
+  if (badIceKey !== null) {
     return {
       ok: false,
       sanitized: null,
-      error: 'Invalid ICE candidate payload (missing candidate string)',
+      error: `Unknown key "${badIceKey}" in ICE candidate payload`,
     };
+  }
+  if (
+    typeof ice.candidate !== 'string' ||
+    ice.candidate.length > 512 ||
+    (ice.candidate.length > 0 && !ICE_CANDIDATE_RE.test(ice.candidate))
+  ) {
+    return {
+      ok: false,
+      sanitized: null,
+      error: 'Invalid RFC 8839 ICE candidate string',
+    };
+  }
+  if (
+    ice.sdpMid !== undefined &&
+    ice.sdpMid !== null &&
+    (typeof ice.sdpMid !== 'string' || !ICE_SDPMID_RE.test(ice.sdpMid))
+  ) {
+    return { ok: false, sanitized: null, error: 'Invalid ICE sdpMid identifier' };
+  }
+  if (
+    ice.sdpMLineIndex !== undefined &&
+    ice.sdpMLineIndex !== null &&
+    (typeof ice.sdpMLineIndex !== 'number' ||
+      !Number.isInteger(ice.sdpMLineIndex) ||
+      ice.sdpMLineIndex < 0 ||
+      ice.sdpMLineIndex > 64)
+  ) {
+    return { ok: false, sanitized: null, error: 'Invalid ICE sdpMLineIndex' };
+  }
+  if (
+    ice.usernameFragment !== undefined &&
+    ice.usernameFragment !== null &&
+    (typeof ice.usernameFragment !== 'string' || !ICE_UFRAG_RE.test(ice.usernameFragment))
+  ) {
+    return { ok: false, sanitized: null, error: 'Invalid ICE usernameFragment' };
   }
   return {
     ok: true,
@@ -355,6 +446,17 @@ export class SwarmSignalingRelay {
 
       if (!body || typeof body !== 'object' || Array.isArray(body)) {
         return jsonResponse({ error: 'Invalid JSON signaling envelope' }, 400);
+      }
+
+      const unknownEnvelopeKey = hasUnknownKeys(
+        body as unknown as Record<string, unknown>,
+        ALLOWED_ENVELOPE_KEYS
+      );
+      if (unknownEnvelopeKey !== null) {
+        return jsonResponse(
+          { error: `Unknown signaling envelope property "${unknownEnvelopeKey}"` },
+          400
+        );
       }
 
       if (containsDecodedGenomeLeak(body)) {

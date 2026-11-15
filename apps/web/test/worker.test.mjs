@@ -394,6 +394,60 @@ test('worker /api/swarm/signal relays announce/offer/answer/ice/leave per room a
       type: 'announce',
       payload: { arbitrary: 'unexpected-announce-body' },
     },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_leak06',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'offer',
+      payload: {
+        type: 'offer',
+        sdp: 'v=0\r\na=ext:chr17\t43094464\trs80357906\tG\tA\t.\tPASS\tGT\t0/1\r\n',
+      },
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_leak07',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'ice',
+      payload: {
+        candidate: 'candidate:1 1 UDP 2122252543 127.0.0.1 5000 typ host chr17\t43094464\trs80357906\tG\tA',
+        sdpMid: 'ufrag:rs4477212\t1\t82154\tAA',
+        sdpMLineIndex: 0,
+        usernameFragment: 'ancestry:rs4477212\t1\t82154\tA\tA',
+      },
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_leak08',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'offer',
+      payload: {
+        type: 'offer',
+        sdp: 'v=0\r\nrs4477212\t1\t82154\tA\tA\r\nrs3094315\t1\t752566\tG\tA\r\n',
+      },
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_leak09',
+      role: 'leecher',
+      type: 'announce',
+      extraLeak: [[[[[[[[['chr17\t43094464\trs80357906\tG\tA\t.\tPASS']]]]]]]]],
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_leak10',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'ice',
+      payload: {
+        candidate: 'candidate:1 1 UDP 2122252543 127.0.0.1 5000 typ host chr17 43094464',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      },
+    },
   ]) {
     const vcfLeakRes = await worker.fetch(
       new Request('https://plasmid.wiki/api/swarm/signal', {
