@@ -1411,8 +1411,12 @@ mod tests {
                 EntryType::VcfVariant,
                 10_000 + i * 1_000,
                 10_000 + i * 1_000,
-                format!("chr1\t{}\trs{}\tA\tG\t99\tPASS\tGENE=TEST\n", 10_000 + i * 1_000, i)
-                    .into_bytes(),
+                format!(
+                    "chr1\t{}\trs{}\tA\tG\t99\tPASS\tGENE=TEST\n",
+                    10_000 + i * 1_000,
+                    i
+                )
+                .into_bytes(),
             );
         }
 
