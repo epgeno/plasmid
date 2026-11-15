@@ -21,7 +21,13 @@ import {
   type AuditLogType,
   type WindowQueryResult,
 } from '../services/plasmidContainerClient';
-import { SupportedLanguage, TRANSLATIONS } from '../i18n';
+import {
+  localizeAuditMessage,
+  localizeAuditTypeBadge,
+  localizeClinicalSignificance,
+  SupportedLanguage,
+  TRANSLATIONS,
+} from '../i18n';
 import type {
   AnnotationRecord,
   CatalogVariantItem,
@@ -39,207 +45,6 @@ const ORDERED_CHROMOSOMES = [
   'chr13', 'chr14', 'chr15', 'chr16', 'chr17', 'chr18',
   'chr19', 'chr20', 'chr21', 'chr22', 'chrX', 'chrY',
 ];
-
-function localizeRangeLabel(label: string, lang: SupportedLanguage): string {
-  if (lang === 'en') return label;
-  const map: Record<string, Record<'ko' | 'zh' | 'ja', string>> = {
-    'Header 128B': { ko: '헤더 128B', zh: '头部 128B', ja: 'ヘッダー 128B' },
-    'Root Directory': { ko: '루트 디렉터리', zh: '根目录', ja: 'ルートディレクトリ' },
-    'Flat Directory': { ko: '플랫 디렉터리', zh: '平面目录', ja: 'フラットディレクトリ' },
-    'Container Metadata': { ko: '컨테이너 메타데이터', zh: '容器元数据', ja: 'コンテナメタデータ' },
-    'Vault VCF': { ko: '볼트 VCF', zh: '保险库 VCF', ja: '保管庫 VCF' },
-    'Vault .plasmid': { ko: '볼트 .plasmid', zh: '保险库 .plasmid', ja: '保管庫 .plasmid' },
-  };
-  if (map[label]) return map[label][lang];
-  const leafMatch = /^Leaf Dir \((.+)\)$/.exec(label);
-  if (leafMatch) {
-    if (lang === 'ko') return `리프 디렉터리 (${leafMatch[1]})`;
-    if (lang === 'zh') return `叶目录 (${leafMatch[1]})`;
-    return `リーフディレクトリ (${leafMatch[1]})`;
-  }
-  const chunkMatch = /^Chunks? #(.+)$/.exec(label);
-  if (chunkMatch) {
-    if (lang === 'ko') return `청크 #${chunkMatch[1]}`;
-    if (lang === 'zh') return `数据块 #${chunkMatch[1]}`;
-    return `チャンク #${chunkMatch[1]}`;
-  }
-  return label;
-}
-
-function localizeAuditTypeBadge(type: AuditLogType, lang: SupportedLanguage): string {
-  if (type === 'opfs') return 'OPFS';
-  if (lang === 'ko') return type === 'network' ? '네트워크' : 'WASM';
-  if (lang === 'zh') return type === 'network' ? '网络' : 'WASM';
-  if (lang === 'ja') return type === 'network' ? '通信' : 'WASM';
-  return type.toUpperCase();
-}
-
-function localizeAuditMessage(message: string, lang: SupportedLanguage): string {
-  if (lang === 'en') return message;
-
-  let m = /^Found (.+) in OPFS\. Engaged offline Airgap slicing\.$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `OPFS에서 ${m[1]} 확인됨 — 오프라인 에어갭 슬라이싱 활성화`;
-    if (lang === 'zh') return `已在 OPFS 中找到 ${m[1]} — 已启用离线空气隔离切片`;
-    return `OPFS 内に ${m[1]} を検出 — オフラインエアギャップスライシング有効化`;
-  }
-
-  m = /^Downloading (.+) into browser OPFS sandbox\.\.\.$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `브라우저 OPFS 격리 저장소로 ${m[1]} 다운로드 중...`;
-    if (lang === 'zh') return `正在将 ${m[1]} 下载至浏览器 OPFS 沙箱...`;
-    return `${m[1]} をブラウザ OPFS サンドボックスへ保存中...`;
-  }
-
-  m = /^(.+) cached in OPFS\. Zero-network Airgap slicing engaged\.$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `${m[1]} OPFS 저장 완료 — 무네트워크 에어갭 슬라이싱 전환`;
-    if (lang === 'zh') return `${m[1]} 已缓存至 OPFS — 已切换至零网络空气隔离切片`;
-    return `${m[1]} を OPFS に保存完了 — ゼロ通信エアギャップスライシングへ切替`;
-  }
-
-  m = /^HTTP 206 \[(.+)\] (.+) \((.+) B\)$/.exec(message);
-  if (m) {
-    return `HTTP 206 [${localizeRangeLabel(m[1], lang)}] ${m[2]} (${m[3]} B)`;
-  }
-
-  m = /^HTTP 200 \[(.+)\] sliced (.+) \((.+) B of (.+) B\)$/.exec(message);
-  if (m) {
-    return `HTTP 200 [${localizeRangeLabel(m[1], lang)}] ${m[2]} (${m[3]} B / ${m[4]} B)`;
-  }
-
-  m = /^OPFS \[(.+)\] (.+) \((.+) B\)$/.exec(message);
-  if (m) {
-    return `OPFS [${localizeRangeLabel(m[1], lang)}] ${m[2]} (${m[3]} B)`;
-  }
-
-  m = /^WASM parsed \.plasmid v(\d+) \((.+), (2-stage hierarchical|flat) index, (\d+) chunks, root=(.+)\)$/.exec(message);
-  if (m) {
-    const idxKind =
-      m[3] === '2-stage hierarchical'
-        ? lang === 'ko'
-          ? '2단계 계층형 색인'
-          : lang === 'zh'
-            ? '二级分层索引'
-            : '2段階階層索引'
-        : lang === 'ko'
-          ? '플랫 색인'
-          : lang === 'zh'
-            ? '平面索引'
-            : 'フラット索引';
-    if (lang === 'ko')
-      return `WASM 헤더 파싱 완료: .plasmid v${m[1]} (${m[2]}, ${idxKind}, 청크 ${m[4]}개, 루트=${m[5]})`;
-    if (lang === 'zh')
-      return `WASM 已解析 .plasmid v${m[1]} (${m[2]}，${idxKind}，${m[4]} 个块，根=${m[5]})`;
-    return `WASM ヘッダー解析完了: .plasmid v${m[1]} (${m[2]}, ${idxKind}, ${m[4]} チャンク, ルート=${m[5]})`;
-  }
-
-  m = /^Chunk cache hit for #(.+) \(0 network bytes\)$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `청크 캐시 적중 #${m[1]} (추가 네트워크 전송 0 B)`;
-    if (lang === 'zh') return `数据块缓存命中 #${m[1]}（网络传输 0 B）`;
-    return `チャンクキャッシュ一致 #${m[1]} (通信量 0 B)`;
-  }
-
-  m = /^WASM decoded (\d+) variant\(s\), (\d+) note\(s\), SHA-256 verified (\d+) chunk\(s\)$/.exec(message);
-  if (m) {
-    if (lang === 'ko')
-      return `WASM 디코딩 완료: 변이 ${m[1]}건, 주석 ${m[2]}건, SHA-256 검증 청크 ${m[3]}개`;
-    if (lang === 'zh')
-      return `WASM 解码完成：变异 ${m[1]} 项，注释 ${m[2]} 项，SHA-256 校验 ${m[3]} 个块`;
-    return `WASM デコード完了: 変異 ${m[1]} 件, 注釈 ${m[2]} 件, SHA-256 検証 ${m[3]} チャンク`;
-  }
-
-  m = /^Jumped to indexed locus (.+) on (.+)$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `색인 구간 이동: ${m[2]} • ${m[1]}`;
-    if (lang === 'zh') return `已跳转至索引位点：${m[2]} • ${m[1]}`;
-    return `索引座位へ移動: ${m[2]} • ${m[1]}`;
-  }
-
-  m = /^Leaf directory queried: no overlapping blocks in (.+)$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `리프 디렉터리 조회 완료: ${m[1]} 구간에 겹치는 블록 없음`;
-    if (lang === 'zh') return `叶目录查询完成：${m[1]} 区间无重叠数据块`;
-    return `リーフディレクトリ照会完了: ${m[1]} に重複ブロックなし`;
-  }
-
-  m = /^Root directory miss on (.+) \(0 leaf\/chunk bytes needed\)$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `루트 디렉터리 미포함 구간: ${m[1]} (리프/청크 요청 0 B)`;
-    if (lang === 'zh') return `根目录未命中区间：${m[1]}（无需读取叶/数据块 0 B）`;
-    return `ルートディレクトリ対象外区間: ${m[1]} (追加取得 0 B)`;
-  }
-
-  m = /^WASM Liftover translated (.+) \((.+)\) -> (.+) \((.+)\)$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `WASM 좌표 변환: ${m[1]} (${m[2]}) → ${m[3]} (${m[4]})`;
-    if (lang === 'zh') return `WASM 坐标转换：${m[1]} (${m[2]}) → ${m[3]} (${m[4]})`;
-    return `WASM 座標変換: ${m[1]} (${m[2]}) → ${m[3]} (${m[4]})`;
-  }
-
-  m = /^WASM Liftover \((.+) -> (.+)\): (.+) -> (.+)$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `WASM 구간 보정 (${m[1]} → ${m[2]}): ${m[3]} → ${m[4]}`;
-    if (lang === 'zh') return `WASM 窗口换算 (${m[1]} → ${m[2]})：${m[3]} → ${m[4]}`;
-    return `WASM 区間変換 (${m[1]} → ${m[2]}): ${m[3]} → ${m[4]}`;
-  }
-
-  m = /^Liftover unmapped for (.+) \((.+)\): (.+)$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `좌표 변환 매핑 범위 밖: ${m[1]} (${m[2]})`;
-    if (lang === 'zh') return `坐标转换超出映射范围：${m[1]} (${m[2]})`;
-    return `座標変換範囲外: ${m[1]} (${m[2]})`;
-  }
-
-  m = /^Switched assembly to (.+) \((.+) unmapped: (.+)\)$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `기준 유전체 ${m[1]} 전환 (${m[2]} 매핑 범위 밖)`;
-    if (lang === 'zh') return `已切换参考基因组至 ${m[1]}（${m[2]} 未映射）`;
-    return `参照ゲノムを ${m[1]} に切替 (${m[2]} 未マップ)`;
-  }
-
-  m = /^Slice error: (.+)$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `슬라이스 오류: ${m[1]}`;
-    if (lang === 'zh') return `切片错误：${m[1]}`;
-    return `スライスエラー: ${m[1]}`;
-  }
-
-  m = /^OPFS cache error: (.+)$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `OPFS 저장 오류: ${m[1]}`;
-    if (lang === 'zh') return `OPFS 缓存错误：${m[1]}`;
-    return `OPFS 保存エラー: ${m[1]}`;
-  }
-
-  m = /^WASM parsed local VCF \((.+), (\d+) variants across (\d+) chromosomes, sha256=(.+)\)$/.exec(
-    message
-  );
-  if (m) {
-    if (lang === 'ko')
-      return `WASM 로컬 VCF 파싱 완료: ${m[1]} (염색체 ${m[3]}개 내 변이 ${m[2]}건, sha256=${m[4]})`;
-    if (lang === 'zh')
-      return `WASM 已解析本地 VCF：${m[1]}（${m[3]} 条染色体共 ${m[2]} 个变异，sha256=${m[4]}）`;
-    return `WASM ローカル VCF 解析完了: ${m[1]} (${m[3]} 染色体・変異 ${m[2]} 件, sha256=${m[4]})`;
-  }
-
-  m = /^Vault VCF coordinate index miss on (.+) \(0 network bytes\)$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `로컬 볼트 색인 구간 밖: ${m[1]} (네트워크 전송 0 B)`;
-    if (lang === 'zh') return `本地保险库索引未命中：${m[1]}（网络传输 0 B）`;
-    return `ローカル保管庫索引対象外: ${m[1]} (通信量 0 B)`;
-  }
-
-  m = /^OPFS Vault sliced (\d+) variant\(s\) on (.+) \(0 network bytes\)$/.exec(message);
-  if (m) {
-    if (lang === 'ko') return `OPFS 볼트 조회 완료: ${m[2]} 변이 ${m[1]}건 (네트워크 전송 0 B)`;
-    if (lang === 'zh') return `OPFS 保险库切片完成：${m[2]} 变异 ${m[1]} 项（网络传输 0 B）`;
-    return `OPFS 保管庫スライス完了: ${m[2]} 変異 ${m[1]} 件 (通信量 0 B)`;
-  }
-
-  return message;
-}
 
 export interface GenomeNavigatorProps {
   lang?: SupportedLanguage;
@@ -264,7 +69,7 @@ interface IndexedHotspotChip {
 }
 
 export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
-  lang = 'ko',
+  lang = 'en',
   sourceMode = 'public',
   opfsFilename = DEFAULT_OPFS_FILENAME,
   containerAssembly = 'GRCh38',
@@ -643,7 +448,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setCachingProgress(null);
-      setLoadError(`OPFS cache failed: ${msg}`);
+      setLoadError(`${nt.opfsCacheFailedPrefix} ${msg}`);
       addLog(`OPFS cache error: ${msg}`, 'opfs');
     }
   };
@@ -961,7 +766,8 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
         ? nt.trackBlocksShort(matchedEntries.length)
         : nt.trackBlocksTitle(matchedEntries.length),
       padLeft,
-      blockTrackY - 16
+      blockTrackY - 16,
+      drawW
     );
 
     ctx.strokeStyle = '#e2e8f0';
@@ -1051,7 +857,8 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
         ? nt.trackVariantsShort(variants.length)
         : nt.trackVariantsTitle(variants.length),
       padLeft,
-      varY - 22
+      varY - 22,
+      drawW
     );
 
     if (loadError) {
@@ -1169,7 +976,9 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
             ctx.fillText(alleleLabel, safeTopX, varY - 15);
           }
 
-          const bottomRaw = (v.clinvar || v.id).replace(/_/g, ' ');
+          const bottomRaw = v.clinvar
+            ? localizeClinicalSignificance(v.clinvar, lang)
+            : v.id.replace(/_/g, ' ');
           const bottomLabel =
             bottomRaw.length > 18 ? `${bottomRaw.slice(0, 16)}…` : bottomRaw;
           ctx.font = '600 10px Inter, Pretendard, sans-serif';
@@ -1220,6 +1029,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
     selectedVariantPos,
     lastQueryResult,
     nt,
+    lang,
     viewportEpoch,
   ]);
 
@@ -1465,15 +1275,17 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                   border: isPublicAirgapped ? '1px solid #86efac' : '1px solid #e2e8f0',
                   backgroundColor: isPublicAirgapped ? '#f0fdf4' : '#ffffff',
                   color: isPublicAirgapped ? '#166534' : '#475569',
-                  whiteSpace: 'nowrap',
+                  maxWidth: '100%',
                 }}
               >
                 {isPublicAirgapped ? (
-                  <ShieldCheck size={15} color="#16a34a" />
+                  <ShieldCheck size={15} color="#16a34a" style={{ flexShrink: 0 }} />
                 ) : (
-                  <Shield size={15} color="#64748b" />
+                  <Shield size={15} color="#64748b" style={{ flexShrink: 0 }} />
                 )}
-                {isPublicAirgapped ? nt.airgapActive : nt.edgeStreaming}
+                <span style={{ wordBreak: 'break-word' }}>
+                  {isPublicAirgapped ? nt.airgapActive : nt.edgeStreaming}
+                </span>
               </button>
 
               {!isOpfsCached && (
@@ -1492,13 +1304,15 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                     border: '1px solid #2563eb',
                     backgroundColor: '#2563eb',
                     color: '#ffffff',
-                    whiteSpace: 'nowrap',
+                    maxWidth: '100%',
                   }}
                 >
-                  <Download size={14} />
-                  {cachingProgress !== null
-                    ? `${nt.cachingPrefix} (${cachingProgress}%)`
-                    : nt.cacheToOpfs}
+                  <Download size={14} style={{ flexShrink: 0 }} />
+                  <span style={{ wordBreak: 'break-word' }}>
+                    {cachingProgress !== null
+                      ? `${nt.cachingPrefix} (${cachingProgress}%)`
+                      : nt.cacheToOpfs}
+                  </span>
                 </button>
               )}
             </>
@@ -1956,7 +1770,7 @@ export const GenomeNavigator: React.FC<GenomeNavigatorProps> = ({
                         wordBreak: 'break-word',
                       }}
                     >
-                      {inspectedVariant.clinvar}
+                      {localizeClinicalSignificance(inspectedVariant.clinvar, lang)}
                     </span>
                   )}
                   <span

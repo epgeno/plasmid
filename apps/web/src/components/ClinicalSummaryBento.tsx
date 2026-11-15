@@ -181,13 +181,14 @@ export const ClinicalSummaryBento: React.FC<ClinicalSummaryBentoProps> = ({
           marginBottom: '12px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flexWrap: 'wrap' }}>
           <span
             style={{
               fontSize: '13px',
               fontWeight: 700,
               color: '#0f172a',
               letterSpacing: '-0.01em',
+              wordBreak: 'break-word',
             }}
           >
             {isVault ? wt.bentoTitleVault : wt.bentoTitlePublic}
@@ -229,11 +230,11 @@ export const ClinicalSummaryBento: React.FC<ClinicalSummaryBentoProps> = ({
               fontSize: '11px',
               fontWeight: 600,
               cursor: 'pointer',
-              whiteSpace: 'nowrap',
+              maxWidth: '100%',
             }}
           >
-            <span>{t.vault.openReportBtn}</span>
-            <ArrowUpRight size={12} color="#2563eb" />
+            <span style={{ wordBreak: 'break-word' }}>{t.vault.openReportBtn}</span>
+            <ArrowUpRight size={12} color="#2563eb" style={{ flexShrink: 0 }} />
           </button>
         ) : (
           <button
@@ -251,11 +252,11 @@ export const ClinicalSummaryBento: React.FC<ClinicalSummaryBentoProps> = ({
               fontSize: '11px',
               fontWeight: 600,
               cursor: 'pointer',
-              whiteSpace: 'nowrap',
+              maxWidth: '100%',
             }}
           >
-            <Upload size={12} color="#2563eb" />
-            <span>{t.vault.selectFileBtn}</span>
+            <Upload size={12} color="#2563eb" style={{ flexShrink: 0 }} />
+            <span style={{ wordBreak: 'break-word' }}>{t.vault.selectFileBtn}</span>
           </button>
         )}
       </div>
@@ -384,7 +385,7 @@ export const ClinicalSummaryBento: React.FC<ClinicalSummaryBentoProps> = ({
                 }}
               >
                 <Database size={13} color="#64748b" style={{ flexShrink: 0 }} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ lineHeight: 1.25, wordBreak: 'break-word' }}>
                   {metrics.row1Label}
                 </span>
               </span>
@@ -423,7 +424,7 @@ export const ClinicalSummaryBento: React.FC<ClinicalSummaryBentoProps> = ({
                 }}
               >
                 <Stethoscope size={13} color="#2563eb" style={{ flexShrink: 0 }} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ lineHeight: 1.25, wordBreak: 'break-word' }}>
                   {metrics.row2Label}
                 </span>
               </span>
@@ -460,7 +461,7 @@ export const ClinicalSummaryBento: React.FC<ClinicalSummaryBentoProps> = ({
                 }}
               >
                 <Activity size={13} color="#be123c" style={{ flexShrink: 0 }} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ lineHeight: 1.25, wordBreak: 'break-word' }}>
                   {wt.bentoRowActionable}
                 </span>
               </span>
@@ -521,9 +522,8 @@ export const ClinicalSummaryBento: React.FC<ClinicalSummaryBentoProps> = ({
               fontWeight: 600,
               color: '#64748b',
               display: 'block',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              lineHeight: 1.25,
+              wordBreak: 'break-word',
             }}
           >
             {wt.bentoKpiBuild}
@@ -557,9 +557,8 @@ export const ClinicalSummaryBento: React.FC<ClinicalSummaryBentoProps> = ({
               fontWeight: 600,
               color: '#64748b',
               display: 'block',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              lineHeight: 1.25,
+              wordBreak: 'break-word',
             }}
           >
             {wt.bentoKpiPathogenic}
@@ -593,9 +592,8 @@ export const ClinicalSummaryBento: React.FC<ClinicalSummaryBentoProps> = ({
               fontWeight: 600,
               color: '#64748b',
               display: 'block',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              lineHeight: 1.25,
+              wordBreak: 'break-word',
             }}
           >
             {isVault ? wt.bentoKpiPharmaco : wt.bentoKpiSavings}
@@ -633,9 +631,8 @@ export const ClinicalSummaryBento: React.FC<ClinicalSummaryBentoProps> = ({
               fontWeight: 600,
               color: '#166534',
               display: 'block',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              lineHeight: 1.25,
+              wordBreak: 'break-word',
             }}
           >
             {wt.bentoKpiEgress}

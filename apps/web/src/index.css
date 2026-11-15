@@ -36,7 +36,7 @@ body {
 }
 
 body {
-  font-family: "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans CJK JP", "Noto Sans SC", system-ui, Roboto, sans-serif;
+  font-family: "Inter", "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans JP", "Noto Sans CJK JP", "Noto Sans SC", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -78,7 +78,7 @@ select:focus-visible {
 @media (min-width: 1200px) {
   .plasmid-workspace {
     display: grid;
-    grid-template-columns: var(--left-rail-w, 236px) minmax(0, 1fr) 332px;
+    grid-template-columns: var(--left-rail-w, 248px) minmax(0, 1fr) 332px;
     grid-template-areas: "nav canvas vault";
     align-items: start;
   }
@@ -135,7 +135,7 @@ select:focus-visible {
 
 @media (min-width: 1440px) {
   .plasmid-workspace {
-    grid-template-columns: var(--left-rail-w, 244px) minmax(0, 1fr) 348px;
+    grid-template-columns: var(--left-rail-w, 256px) minmax(0, 1fr) 348px;
   }
 }
 
@@ -276,8 +276,8 @@ select:focus-visible {
   }
 
   .plasmid-kpi-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 5px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
   }
 
   .plasmid-nav-subtitle {

@@ -11,7 +11,11 @@ import {
   Stethoscope,
   Upload,
 } from 'lucide-react';
-import { SupportedLanguage, TRANSLATIONS } from '../i18n';
+import {
+  localizeClinicalSignificance,
+  SupportedLanguage,
+  TRANSLATIONS,
+} from '../i18n';
 import type { ClinVarIntersectionReport, ClinVarMatchedVariant } from '../types/plasmid';
 
 export interface ClinVarIntersectionPanelProps {
@@ -31,11 +35,11 @@ type CategoryFilter =
   | 'drug_response'
   | 'risk_factor';
 
-function renderStars(stars: number): React.ReactNode {
+function renderStars(stars: number, ariaLabel: string): React.ReactNode {
   const clamped = Math.max(0, Math.min(4, stars));
   return (
     <span
-      aria-label={`${clamped} of 4 ClinVar review stars`}
+      aria-label={ariaLabel}
       style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}
     >
       {[0, 1, 2, 3].map((idx) => (
@@ -115,6 +119,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
         m.chrom,
         String(m.pos),
         m.clinical_significance,
+        localizeClinicalSignificance(m.clinical_significance, lang),
         ...m.conditions,
       ]
         .join(' ')
@@ -122,7 +127,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
 
       return haystack.includes(q);
     });
-  }, [report, categoryFilter, minStars, searchQuery]);
+  }, [report, categoryFilter, minStars, searchQuery, lang]);
 
   const ringArcs = useMemo(() => {
     if (!report) return [];
@@ -805,7 +810,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                               wordBreak: 'break-word',
                             }}
                           >
-                            {m.clinical_significance.replace(/_/g, ' ')}
+                            {localizeClinicalSignificance(m.clinical_significance, lang)}
                           </span>
 
                           <span
@@ -820,7 +825,7 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                             }}
                             title={m.review_status}
                           >
-                            {renderStars(m.review_stars)}
+                            {renderStars(m.review_stars, it.starsAria(Math.max(0, Math.min(4, m.review_stars))))}
                             <span>({m.review_stars}/4)</span>
                           </span>
                         </div>
@@ -897,11 +902,11 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                               fontSize: '11px',
                               fontWeight: 600,
                               textDecoration: 'none',
-                              whiteSpace: 'nowrap',
+                              maxWidth: '100%',
                             }}
                           >
-                            <span>{it.clinvarLinkLabel}</span>
-                            <ExternalLink size={11} />
+                            <span style={{ wordBreak: 'break-word' }}>{it.clinvarLinkLabel}</span>
+                            <ExternalLink size={11} style={{ flexShrink: 0 }} />
                           </a>
                         )}
 
@@ -921,11 +926,11 @@ export const ClinVarIntersectionPanel: React.FC<ClinVarIntersectionPanelProps> =
                             fontSize: '11px',
                             fontWeight: 700,
                             cursor: 'pointer',
-                            whiteSpace: 'nowrap',
+                            maxWidth: '100%',
                           }}
                         >
-                          <Compass size={12} />
-                          <span>{it.openInNavigatorBtn}</span>
+                          <Compass size={12} style={{ flexShrink: 0 }} />
+                          <span style={{ wordBreak: 'break-word' }}>{it.openInNavigatorBtn}</span>
                         </button>
                       </div>
                     </div>
