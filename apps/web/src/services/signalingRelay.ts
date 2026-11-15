@@ -56,8 +56,8 @@ export const MAX_SWARM_ROOMS = 128;
 export const MAX_PEERS_PER_ROOM = 32;
 export const MAX_MESSAGES_PER_ROOM = 256;
 
-const ROOM_NAME_RE = /^[a-zA-Z0-9._:-]{3,64}$/;
-const PEER_ID_RE = /^[a-zA-Z0-9_-]{4,64}$/;
+const ROOM_NAME_RE = /^[a-zA-Z0-9_-]{3,64}$/;
+const PEER_ID_RE = /^(?:[a-zA-Z0-9]{4,20}|[a-zA-Z]{2,10}[_-][a-zA-Z0-9]{2,16})$/;
 const HEX_64_RE = /^[0-9a-fA-F]{64}$/;
 const PROPRIETARY_ROOM_TOKENS = ['omim', 'cosmic', 'hgmd', 'snpedia'];
 const ALLOWED_ENVELOPE_KEYS = new Set([
@@ -77,37 +77,77 @@ const ALLOWED_ICE_KEYS = new Set([
   'sdpMLineIndex',
   'usernameFragment',
 ]);
-const SDP_IPV4_RE = '(?:\\d{1,3}\\.){3}\\d{1,3}';
-const SDP_IPV6_RE = '[0-9a-fA-F:]{2,45}';
-const SDP_ADDR_RE = `(?:IP4 ${SDP_IPV4_RE}|IP6 ${SDP_IPV6_RE})`;
+
+function isValidIpv4(addr: string): boolean {
+  const parts = addr.split('.');
+  if (parts.length !== 4) return false;
+  for (const p of parts) {
+    if (!/^(?:0|[1-9]\d{0,2})$/.test(p)) return false;
+    const n = Number(p);
+    if (n < 0 || n > 255) return false;
+  }
+  return true;
+}
+
+function isValidIpv6(addr: string): boolean {
+  if (addr.length < 2 || addr.length > 45 || !/^[0-9a-fA-F:]+$/.test(addr)) {
+    return false;
+  }
+  if (addr.includes(':::')) return false;
+  const doubleColonParts = addr.split('::');
+  if (doubleColonParts.length > 2) return false;
+  if (doubleColonParts.length === 2) {
+    const left = doubleColonParts[0] ? doubleColonParts[0].split(':') : [];
+    const right = doubleColonParts[1] ? doubleColonParts[1].split(':') : [];
+    if (left.length + right.length >= 8) return false;
+    return [...left, ...right].every((g) => /^[0-9a-fA-F]{1,4}$/.test(g));
+  }
+  const groups = addr.split(':');
+  if (groups.length !== 8) return false;
+  return groups.every((g) => /^[0-9a-fA-F]{1,4}$/.test(g));
+}
+
+function isValidHostAddress(addr: string): boolean {
+  if (
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.local$/.test(
+      addr
+    )
+  ) {
+    return true;
+  }
+  return isValidIpv4(addr) || isValidIpv6(addr);
+}
+
+function isValidSdpAddrSpec(spec: string): boolean {
+  if (spec.startsWith('IP4 ')) return isValidIpv4(spec.slice(4));
+  if (spec.startsWith('IP6 ')) return isValidIpv6(spec.slice(4));
+  return false;
+}
+
 const ALLOWED_SDP_LINE_RES: RegExp[] = [
   /^v=0$/,
-  new RegExp(`^o=[A-Za-z0-9._-]{1,32} \\d{1,24} \\d{1,12} IN ${SDP_ADDR_RE}$`),
   /^s=-$/,
   /^t=0 0$/,
-  new RegExp(`^c=IN ${SDP_ADDR_RE}$`),
   /^b=(?:AS|TIAS):\d{1,10}$/,
   /^m=application \d{1,5} (?:UDP\/DTLS\/SCTP|DTLS\/SCTP) (?:webrtc-datachannel|\d{1,5})$/,
-  /^a=group:BUNDLE(?: [A-Za-z0-9._-]{1,16})+$/,
+  /^a=group:BUNDLE(?: [A-Za-z0-9]{1,8}){1,4}$/,
   /^a=extmap-allow-mixed$/,
   /^a=msid-semantic:\s*WMS(?:\s+\*)?$/,
-  /^a=ice-ufrag:[A-Za-z0-9+/]{4,32}$/,
-  /^a=ice-pwd:[A-Za-z0-9+/]{22,64}$/,
+  /^a=ice-ufrag:[A-Za-z0-9+/]{4,16}$/,
+  /^a=ice-pwd:[A-Za-z0-9+/]{22,36}$/,
   /^a=ice-options:(?:trickle|renomination)(?: (?:trickle|renomination))*$/,
   /^a=ice-lite$/,
   /^a=fingerprint:sha-(?:256|384|512) (?:[0-9A-Fa-f]{2}:){31,63}[0-9A-Fa-f]{2}$/,
   /^a=setup:(?:actpass|active|passive|holdconn)$/,
-  /^a=mid:[A-Za-z0-9._-]{1,16}$/,
+  /^a=mid:[A-Za-z0-9]{1,8}$/,
   /^a=sctp-port:\d{1,5}$/,
   /^a=max-message-size:\d{1,10}$/,
   /^a=sctpmap:\d{1,5} webrtc-datachannel \d{1,6}$/,
   /^a=(?:sendrecv|sendonly|recvonly|inactive|end-of-candidates)$/,
 ];
 
-const ICE_HOST_ADDR_RE =
-  /^(?:(?:\d{1,3}\.){3}\d{1,3}|[0-9a-fA-F:]{2,45}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.local)$/;
-const ICE_SDPMID_RE = /^[A-Za-z0-9._-]{1,16}$/;
-const ICE_UFRAG_RE = /^[A-Za-z0-9+/]{4,32}$/;
+const ICE_SDPMID_RE = /^[A-Za-z0-9]{1,8}$/;
+const ICE_UFRAG_RE = /^[A-Za-z0-9+/]{4,16}$/;
 
 function isValidIceCandidateString(raw: string): boolean {
   const trimmed = raw.startsWith('a=') ? raw.slice(2) : raw;
@@ -120,12 +160,13 @@ function isValidIceCandidateString(raw: string): boolean {
   }
   const [foundation, componentId, transport, priority, address, port, typKeyword, candType] =
     tokens;
-  if (!/^[A-Za-z0-9+/]{1,32}$/.test(foundation)) return false;
+  if (!/^\d{1,16}$/.test(foundation)) return false;
   if (!/^[12]$/.test(componentId)) return false;
   if (!/^(?:udp|tcp|UDP|TCP)$/.test(transport)) return false;
   if (!/^\d{1,10}$/.test(priority)) return false;
-  if (!ICE_HOST_ADDR_RE.test(address)) return false;
-  if (!/^\d{1,5}$/.test(port)) return false;
+  if (!isValidHostAddress(address)) return false;
+  const portNum = Number(port);
+  if (!/^\d{1,5}$/.test(port) || portNum < 1 || portNum > 65535) return false;
   if (typKeyword !== 'typ') return false;
   if (!/^(?:host|srflx|prflx|relay)$/.test(candType)) return false;
 
@@ -134,7 +175,7 @@ function isValidIceCandidateString(raw: string): boolean {
     const extVal = tokens[i + 1];
     switch (extKey) {
       case 'raddr':
-        if (!ICE_HOST_ADDR_RE.test(extVal)) return false;
+        if (!isValidHostAddress(extVal)) return false;
         break;
       case 'rport':
       case 'generation':
@@ -156,16 +197,37 @@ function isValidIceCandidateString(raw: string): boolean {
 }
 
 function isValidDataChannelSdpLine(line: string): boolean {
+  if (line.startsWith('o=')) {
+    const m = /^o=(?:-|mozilla[A-Za-z0-9._-]{0,24}) \d{1,24} \d{1,12} IN (IP[46] .+)$/.exec(line);
+    return m !== null && isValidSdpAddrSpec(m[1]);
+  }
+  if (line.startsWith('c=IN ')) {
+    return isValidSdpAddrSpec(line.slice(5));
+  }
   if (line.startsWith('a=candidate:')) {
     return isValidIceCandidateString(line.slice(2));
   }
   return ALLOWED_SDP_LINE_RES.some((re) => re.test(line));
 }
 
+const GENOME_DELIM = '[\\t\\s,:._/+-]+';
+const GENOME_CHROM = '(?:[1-9]|1\\d|2[0-6]|X|Y|M|MT)';
 const RAW_GENOME_LEAK_RE =
   /##fileformat=VCF|#CHROM(?:\\t|\t|\s)+POS|#\s*rsid(?:\\t|\t|\s)+chromosome/i;
-const DECODED_GENOME_LEAK_RE =
-  /##fileformat=VCF|#CHROM[\t\s,:._-]+POS|#\s*rsid[\t\s,:._-]+chromosome|chr(?:[1-9]|1\d|2[0-6]|X|Y|M|MT)[\t\s,:._-]+\d{2,9}[\t\s,:._-]+[A-Za-z0-9._-]+[\t\s,:._-]+[ACGTN]+[\t\s,:._-]+[ACGTN.]+(?![A-Za-z0-9])|(?:^|[^A-Za-z0-9])(?:[1-9]|1\d|2[0-6]|X|Y|M|MT)[\t\s,:]+\d{2,9}[\t\s,:]+[A-Za-z0-9._-]+[\t\s,:]+[ACGTN]+[\t\s,:]+[ACGTN.]+(?![A-Za-z0-9])|(?:rs|i)\d{3,12}[\t\s,:._-]+(?:chr)?(?:[1-9]|1\d|2[0-6]|X|Y|M|MT)[\t\s,:._-]+\d{2,9}[\t\s,:._-]+[ACGTDI-]{1,2}(?:[\t\s,:._-]+[ACGTDI-]{1,2})?(?![A-Za-z0-9])/i;
+const DECODED_GENOME_LEAK_RE = new RegExp(
+  [
+    '##fileformat=VCF',
+    `#CHROM${GENOME_DELIM}POS`,
+    `#\\s*rsid${GENOME_DELIM}chromosome`,
+    // chr-prefixed 4-field (gnomAD/SPDI) or 5-field (VCF) variant
+    `chr${GENOME_CHROM}${GENOME_DELIM}\\d{2,9}${GENOME_DELIM}(?:[A-Za-z0-9._-]+${GENOME_DELIM})?[ACGTN]+${GENOME_DELIM}[ACGTN.]+(?![A-Za-z0-9])`,
+    // bare-chromosome 4-field or 5-field variant (pos >= 3 digits avoids 2-char hex pairs)
+    `(?:^|[^A-Za-z0-9])${GENOME_CHROM}${GENOME_DELIM}\\d{3,9}${GENOME_DELIM}(?:[A-Za-z0-9._-]+${GENOME_DELIM})?[ACGTN]+${GENOME_DELIM}[ACGTN.]+(?![A-Za-z0-9])`,
+    // 23andMe / AncestryDNA / MyHeritage rsID or iID genotype
+    `(?:rs|i)\\d{3,12}${GENOME_DELIM}(?:chr)?${GENOME_CHROM}${GENOME_DELIM}\\d{2,9}${GENOME_DELIM}[ACGTDI-]{1,2}(?:${GENOME_DELIM}[ACGTDI-]{1,2})?(?![A-Za-z0-9])`,
+  ].join('|'),
+  'i'
+);
 
 function hasUnknownKeys(obj: Record<string, unknown>, allowed: Set<string>): string | null {
   for (const key of Object.keys(obj)) {
@@ -244,6 +306,7 @@ function normalizeAndValidateSignalPayload(
     if (
       lines.length < 2 ||
       lines[0] !== 'v=0' ||
+      !lines.some((line) => line.startsWith('m=application ')) ||
       lines.some((line) => !isValidDataChannelSdpLine(line))
     ) {
       return {

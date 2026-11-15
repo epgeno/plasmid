@@ -517,6 +517,72 @@ test('worker /api/swarm/signal relays announce/offer/answer/ice/leave per room a
       role: 'leecher',
       type: 'announce',
     },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_adv01',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'ice',
+      payload: {
+        candidate: 'candidate:1 1 UDP 2122252543 127.0.0.1 5000 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+        usernameFragment: 'chr17/43094464/rs80357906/G/A',
+      },
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_adv02',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'offer',
+      payload: {
+        type: 'offer',
+        sdp: 'v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=ice-ufrag:chr17/43094464/13961/G/A/0/1\r\na=ice-pwd:rs4477212+1+82154+A+A+rs3094315+1+752566+G+A\r\n',
+      },
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_adv03',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'ice',
+      payload: {
+        candidate:
+          'candidate:chr17/43094464/rs80357906/G/A 1 UDP 2122252543 127.0.0.1 5000 typ host ufrag rs4477212+23+82154+AA',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+      },
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_17_43094464_rs80357906_G_A',
+      role: 'leecher',
+      type: 'announce',
+    },
+    {
+      room: 'chr17:43094464:G:A',
+      fromPeerId: 'peer_adv05',
+      role: 'leecher',
+      type: 'announce',
+    },
+    {
+      room: '17-43094464-G-A',
+      fromPeerId: 'peer_adv05b',
+      role: 'leecher',
+      type: 'announce',
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_adv06',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'offer',
+      payload: {
+        type: 'offer',
+        sdp: 'v=0\r\nc=IN IP6 17:43094464:A:C\r\n',
+      },
+    },
   ]) {
     const vcfLeakRes = await worker.fetch(
       new Request('https://plasmid.wiki/api/swarm/signal', {
