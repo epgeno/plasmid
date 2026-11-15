@@ -332,3 +332,54 @@ select:focus-visible {
     gap: 10px;
   }
 }
+
+/* WebRTC P2P Swarm Responsive Controls */
+.plasmid-swarm-room-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.plasmid-swarm-role-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.plasmid-swarm-action-btns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 8px;
+}
+
+.plasmid-swarm-peer-metrics {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .plasmid-swarm-room-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .plasmid-swarm-role-btns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .plasmid-swarm-action-btns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .plasmid-swarm-peer-metrics {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}

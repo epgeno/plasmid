@@ -133,6 +133,28 @@ export interface WasmMerkleVerification {
   chunk_hashes: string[];
 }
 
+export interface WasmMerkleProofStep {
+  sibling_hex: string;
+  is_right: boolean;
+}
+
+export interface WasmChunkMerkleBundle {
+  chunk_index: number;
+  total_chunks: number;
+  leaf_sha256_hex: string;
+  root_hash_hex: string;
+  proof: WasmMerkleProofStep[];
+}
+
+export interface WasmChunkProofVerification {
+  verified: boolean;
+  chunk_index: number;
+  total_chunks: number;
+  leaf_sha256_hex: string;
+  calculated_root_hex: string;
+  expected_root_hex: string;
+}
+
 export interface ChromosomeOverview {
   chrom_id: number;
   chrom_name: string;

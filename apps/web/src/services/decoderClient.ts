@@ -15,11 +15,14 @@ import type {
   UnifiedGenomicSlice,
   VcfVariantRecord,
   WasmChunkHashInfo,
+  WasmChunkMerkleBundle,
+  WasmChunkProofVerification,
   WasmHeaderInfo,
   WasmIndexEntryInfo,
   WasmIntersectionResult,
   WasmLeafPointerInfo,
   WasmLeafQueryPlan,
+  WasmMerkleProofStep,
   WasmMerkleVerification,
 } from '../types/plasmid';
 
@@ -233,6 +236,33 @@ class DecoderWorkerClient {
     const res = await this.callWorker<{ verification: WasmMerkleVerification }>(
       'VERIFY_MERKLE_TREE',
       { payloadBuffer, chunkSize, expectedRootHex }
+    );
+    return res.verification;
+  }
+
+  public async generateChunkProofs(
+    payloadBuffer: Uint8Array,
+    chunkSize: number,
+    chunkIndices: number[]
+  ): Promise<WasmChunkMerkleBundle[]> {
+    const res = await this.callWorker<{ bundles: WasmChunkMerkleBundle[] }>(
+      'GENERATE_CHUNK_PROOFS',
+      { payloadBuffer, chunkSize, chunkIndices }
+    );
+    return res.bundles;
+  }
+
+  public async verifyMerkleChunkProof(params: {
+    chunkBuffer: Uint8Array;
+    chunkIndex: number;
+    totalChunks: number;
+    chunkSize: number;
+    expectedRootHex: string;
+    proof: WasmMerkleProofStep[];
+  }): Promise<WasmChunkProofVerification> {
+    const res = await this.callWorker<{ verification: WasmChunkProofVerification }>(
+      'VERIFY_MERKLE_CHUNK_PROOF',
+      params
     );
     return res.verification;
   }

@@ -1,3 +1,7 @@
+import { defaultSwarmRelay, SwarmSignalingRelay } from './services/signalingRelay.js';
+
+export { SwarmSignalingRelay };
+
 export interface Env {
   ASSETS: Fetcher;
   GENOME_BUCKET?: R2Bucket;
@@ -204,6 +208,11 @@ export default {
         headers,
         status: 200,
       });
+    }
+
+    // API: WebRTC P2P Swarm Ephemeral Signaling Relay
+    if (url.pathname === '/api/swarm/signal') {
+      return defaultSwarmRelay.handleRequest(request);
     }
 
     // Health & edge status check

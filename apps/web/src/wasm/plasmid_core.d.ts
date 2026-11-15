@@ -26,6 +26,10 @@ export class PlasmidWasmEngine {
      */
     static detect_build(variants_json: string): string;
     /**
+     * Generates BEP 52 SHA-256 Merkle audit proofs for requested chunk indices.
+     */
+    static generate_chunk_proofs(payload_bytes: Uint8Array, chunk_size: number, chunk_indices: Uint32Array): any;
+    /**
      * Returns authoritative contig lengths and centromere coordinates for GRCh38 or GRCh37.
      */
     static get_assembly_overview(assembly: string): any;
@@ -90,6 +94,10 @@ export class PlasmidWasmEngine {
      */
     static verify_locus_consistency(rsid: string, chrom: string, queried_pos: number, asserted_ref: string, authoritative_pos: number, authoritative_ref: string, reference_slice: string | null | undefined, slice_start_pos: number, target_build: string): boolean;
     /**
+     * Verifies a single 16KB P2P chunk against the container header's BEP 52 Merkle root and proof path.
+     */
+    static verify_merkle_chunk_proof(chunk_bytes: Uint8Array, chunk_index: number, total_chunks: number, chunk_size: number, expected_root_hex: string, proof_json: string): any;
+    /**
      * Recomputes full BEP 52 SHA-256 Merkle Tree over container payload chunks and verifies root hash.
      */
     static verify_merkle_tree(payload_bytes: Uint8Array, chunk_size: number, expected_root_hex: string): any;
@@ -109,6 +117,7 @@ export interface InitOutput {
     readonly plasmidwasmengine_decode_planned_slice: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
     readonly plasmidwasmengine_decode_vcf_chunk: (a: number, b: number) => [number, number, number];
     readonly plasmidwasmengine_detect_build: (a: number, b: number) => [number, number, number, number];
+    readonly plasmidwasmengine_generate_chunk_proofs: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly plasmidwasmengine_get_assembly_overview: (a: number, b: number) => [number, number, number];
     readonly plasmidwasmengine_hash_chunk_hex: (a: number, b: number) => [number, number];
     readonly plasmidwasmengine_intersect_personal_with_clinvar: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number];
@@ -125,6 +134,7 @@ export interface InitOutput {
     readonly plasmidwasmengine_query_root_leaves: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly plasmidwasmengine_verify_chunk_hash: (a: number, b: number, c: number, d: number) => number;
     readonly plasmidwasmengine_verify_locus_consistency: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number) => [number, number, number];
+    readonly plasmidwasmengine_verify_merkle_chunk_proof: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly plasmidwasmengine_verify_merkle_tree: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly plasmidwasmengine_verify_ref_fingerprint: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;

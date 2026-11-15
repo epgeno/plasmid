@@ -7,6 +7,7 @@ export const plasmidwasmengine_decode_fasta_chunk: (a: number, b: number, c: num
 export const plasmidwasmengine_decode_planned_slice: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
 export const plasmidwasmengine_decode_vcf_chunk: (a: number, b: number) => [number, number, number];
 export const plasmidwasmengine_detect_build: (a: number, b: number) => [number, number, number, number];
+export const plasmidwasmengine_generate_chunk_proofs: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
 export const plasmidwasmengine_get_assembly_overview: (a: number, b: number) => [number, number, number];
 export const plasmidwasmengine_hash_chunk_hex: (a: number, b: number) => [number, number];
 export const plasmidwasmengine_intersect_personal_with_clinvar: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number];
@@ -23,6 +24,7 @@ export const plasmidwasmengine_plan_range_slice: (a: number, b: number, c: numbe
 export const plasmidwasmengine_query_root_leaves: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
 export const plasmidwasmengine_verify_chunk_hash: (a: number, b: number, c: number, d: number) => number;
 export const plasmidwasmengine_verify_locus_consistency: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number) => [number, number, number];
+export const plasmidwasmengine_verify_merkle_chunk_proof: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
 export const plasmidwasmengine_verify_merkle_tree: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
 export const plasmidwasmengine_verify_ref_fingerprint: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
 export const __wbindgen_malloc: (a: number, b: number) => number;
