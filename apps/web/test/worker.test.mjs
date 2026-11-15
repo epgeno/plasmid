@@ -448,6 +448,75 @@ test('worker /api/swarm/signal relays announce/offer/answer/ice/leave per room a
         sdpMLineIndex: 0,
       },
     },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_prb01',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'offer',
+      payload: {
+        type: 'offer',
+        sdp: 'v=0\r\na=ext:chr17 43094464 13961 G A 100 PASS GT 0/1\r\n',
+      },
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_prb02',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'offer',
+      payload: {
+        type: 'offer',
+        sdp: 'v=0\r\na=ext_rs4477212 1 82154 A A\r\n',
+      },
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_prb03',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'offer',
+      payload: {
+        type: 'offer',
+        sdp: 'v=0\r\na=ext:rs4477212 23 82154 A A\r\n',
+      },
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_prb04',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'offer',
+      payload: {
+        type: 'offer',
+        sdp: 'v=0\r\na=ext:rs4477212,1,82154,AA\r\n',
+      },
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_prb05',
+      toPeerId: 'peer_seeder01',
+      role: 'leecher',
+      type: 'ice',
+      payload: {
+        candidate: 'candidate:1 1 UDP 2122252543 127.0.0.1 5000 typ host',
+        sdpMid: '0',
+        sdpMLineIndex: 0,
+        usernameFragment: 'chr17:43094464:rs80357906:G:A:0/1',
+      },
+    },
+    {
+      room: 'chr17:43094464:13961:G:A',
+      fromPeerId: 'peer_prb06',
+      role: 'leecher',
+      type: 'announce',
+    },
+    {
+      room: 'clinvar-clean',
+      fromPeerId: 'peer_rs4477212_23_82154_AA',
+      role: 'leecher',
+      type: 'announce',
+    },
   ]) {
     const vcfLeakRes = await worker.fetch(
       new Request('https://plasmid.wiki/api/swarm/signal', {

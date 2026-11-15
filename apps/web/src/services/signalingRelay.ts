@@ -77,16 +77,95 @@ const ALLOWED_ICE_KEYS = new Set([
   'sdpMLineIndex',
   'usernameFragment',
 ]);
-const SDP_LINE_RE = /^[a-z]=[\x20-\x7e]+$/;
-const ICE_CANDIDATE_RE =
-  /^(?:a=)?candidate:[A-Za-z0-9+/=._:-]{1,64}\s+\d{1,5}\s+(?:udp|tcp|UDP|TCP)\s+\d{1,12}\s+[A-Za-z0-9.:%-]{1,128}\s+\d{1,5}\s+typ\s+(?:host|srflx|prflx|relay)(?:\s+(?:raddr|rport|tcptype|generation|ufrag|network-id|network-cost)\s+[A-Za-z0-9.+/=_%:-]{1,64})*$/;
-const ICE_SDPMID_RE = /^[A-Za-z0-9._-]{1,32}$/;
-const ICE_UFRAG_RE = /^[A-Za-z0-9+/=._:-]{1,64}$/;
+const SDP_IPV4_RE = '(?:\\d{1,3}\\.){3}\\d{1,3}';
+const SDP_IPV6_RE = '[0-9a-fA-F:]{2,45}';
+const SDP_ADDR_RE = `(?:IP4 ${SDP_IPV4_RE}|IP6 ${SDP_IPV6_RE})`;
+const ALLOWED_SDP_LINE_RES: RegExp[] = [
+  /^v=0$/,
+  new RegExp(`^o=[A-Za-z0-9._-]{1,32} \\d{1,24} \\d{1,12} IN ${SDP_ADDR_RE}$`),
+  /^s=-$/,
+  /^t=0 0$/,
+  new RegExp(`^c=IN ${SDP_ADDR_RE}$`),
+  /^b=(?:AS|TIAS):\d{1,10}$/,
+  /^m=application \d{1,5} (?:UDP\/DTLS\/SCTP|DTLS\/SCTP) (?:webrtc-datachannel|\d{1,5})$/,
+  /^a=group:BUNDLE(?: [A-Za-z0-9._-]{1,16})+$/,
+  /^a=extmap-allow-mixed$/,
+  /^a=msid-semantic:\s*WMS(?:\s+\*)?$/,
+  /^a=ice-ufrag:[A-Za-z0-9+/]{4,32}$/,
+  /^a=ice-pwd:[A-Za-z0-9+/]{22,64}$/,
+  /^a=ice-options:(?:trickle|renomination)(?: (?:trickle|renomination))*$/,
+  /^a=ice-lite$/,
+  /^a=fingerprint:sha-(?:256|384|512) (?:[0-9A-Fa-f]{2}:){31,63}[0-9A-Fa-f]{2}$/,
+  /^a=setup:(?:actpass|active|passive|holdconn)$/,
+  /^a=mid:[A-Za-z0-9._-]{1,16}$/,
+  /^a=sctp-port:\d{1,5}$/,
+  /^a=max-message-size:\d{1,10}$/,
+  /^a=sctpmap:\d{1,5} webrtc-datachannel \d{1,6}$/,
+  /^a=(?:sendrecv|sendonly|recvonly|inactive|end-of-candidates)$/,
+];
+
+const ICE_HOST_ADDR_RE =
+  /^(?:(?:\d{1,3}\.){3}\d{1,3}|[0-9a-fA-F:]{2,45}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.local)$/;
+const ICE_SDPMID_RE = /^[A-Za-z0-9._-]{1,16}$/;
+const ICE_UFRAG_RE = /^[A-Za-z0-9+/]{4,32}$/;
+
+function isValidIceCandidateString(raw: string): boolean {
+  const trimmed = raw.startsWith('a=') ? raw.slice(2) : raw;
+  if (!trimmed.startsWith('candidate:') || trimmed.length > 512 || trimmed.includes('\t')) {
+    return false;
+  }
+  const tokens = trimmed.slice('candidate:'.length).split(' ');
+  if (tokens.length < 8 || (tokens.length - 8) % 2 !== 0) {
+    return false;
+  }
+  const [foundation, componentId, transport, priority, address, port, typKeyword, candType] =
+    tokens;
+  if (!/^[A-Za-z0-9+/]{1,32}$/.test(foundation)) return false;
+  if (!/^[12]$/.test(componentId)) return false;
+  if (!/^(?:udp|tcp|UDP|TCP)$/.test(transport)) return false;
+  if (!/^\d{1,10}$/.test(priority)) return false;
+  if (!ICE_HOST_ADDR_RE.test(address)) return false;
+  if (!/^\d{1,5}$/.test(port)) return false;
+  if (typKeyword !== 'typ') return false;
+  if (!/^(?:host|srflx|prflx|relay)$/.test(candType)) return false;
+
+  for (let i = 8; i < tokens.length; i += 2) {
+    const extKey = tokens[i];
+    const extVal = tokens[i + 1];
+    switch (extKey) {
+      case 'raddr':
+        if (!ICE_HOST_ADDR_RE.test(extVal)) return false;
+        break;
+      case 'rport':
+      case 'generation':
+      case 'network-id':
+      case 'network-cost':
+        if (!/^\d{1,5}$/.test(extVal)) return false;
+        break;
+      case 'tcptype':
+        if (!/^(?:active|passive|so)$/.test(extVal)) return false;
+        break;
+      case 'ufrag':
+        if (!ICE_UFRAG_RE.test(extVal)) return false;
+        break;
+      default:
+        return false;
+    }
+  }
+  return true;
+}
+
+function isValidDataChannelSdpLine(line: string): boolean {
+  if (line.startsWith('a=candidate:')) {
+    return isValidIceCandidateString(line.slice(2));
+  }
+  return ALLOWED_SDP_LINE_RES.some((re) => re.test(line));
+}
 
 const RAW_GENOME_LEAK_RE =
   /##fileformat=VCF|#CHROM(?:\\t|\t|\s)+POS|#\s*rsid(?:\\t|\t|\s)+chromosome/i;
 const DECODED_GENOME_LEAK_RE =
-  /##fileformat=VCF|#CHROM[\t\s]+POS|#\s*rsid[\t\s]+chromosome|(?:chr)?(?:[1-9]|1\d|2[0-2]|X|Y|M|MT)[\t\s]+\d{2,9}[\t\s]+(?:rs\d+|\.)[\t\s]+[ACGTN]+[\t\s]+[ACGTN.]+\b|\b(?:rs|i)\d{3,12}[\t\s]+(?:[1-9]|1\d|2[0-2]|X|Y|MT)[\t\s]+\d{2,9}[\t\s]+[ACGTDI-]{1,2}(?:[\t\s]+[ACGTDI-]{1,2})?(?:\b|$)/i;
+  /##fileformat=VCF|#CHROM[\t\s,:._-]+POS|#\s*rsid[\t\s,:._-]+chromosome|chr(?:[1-9]|1\d|2[0-6]|X|Y|M|MT)[\t\s,:._-]+\d{2,9}[\t\s,:._-]+[A-Za-z0-9._-]+[\t\s,:._-]+[ACGTN]+[\t\s,:._-]+[ACGTN.]+(?![A-Za-z0-9])|(?:^|[^A-Za-z0-9])(?:[1-9]|1\d|2[0-6]|X|Y|M|MT)[\t\s,:]+\d{2,9}[\t\s,:]+[A-Za-z0-9._-]+[\t\s,:]+[ACGTN]+[\t\s,:]+[ACGTN.]+(?![A-Za-z0-9])|(?:rs|i)\d{3,12}[\t\s,:._-]+(?:chr)?(?:[1-9]|1\d|2[0-6]|X|Y|M|MT)[\t\s,:._-]+\d{2,9}[\t\s,:._-]+[ACGTDI-]{1,2}(?:[\t\s,:._-]+[ACGTDI-]{1,2})?(?![A-Za-z0-9])/i;
 
 function hasUnknownKeys(obj: Record<string, unknown>, allowed: Set<string>): string | null {
   for (const key of Object.keys(obj)) {
@@ -162,11 +241,15 @@ function normalizeAndValidateSignalPayload(
       };
     }
     const lines = rec.sdp.split(/\r?\n/).filter((l) => l.length > 0);
-    if (lines.length < 2 || lines.some((line) => !SDP_LINE_RE.test(line))) {
+    if (
+      lines.length < 2 ||
+      lines[0] !== 'v=0' ||
+      lines.some((line) => !isValidDataChannelSdpLine(line))
+    ) {
       return {
         ok: false,
         sanitized: null,
-        error: `Invalid RFC 8866 SDP line syntax in ${signalType} payload`,
+        error: `Invalid JSEP DataChannel SDP line syntax in ${signalType} payload`,
       };
     }
     return { ok: true, sanitized: { type: signalType, sdp: rec.sdp }, error: '' };
@@ -192,7 +275,7 @@ function normalizeAndValidateSignalPayload(
   if (
     typeof ice.candidate !== 'string' ||
     ice.candidate.length > 512 ||
-    (ice.candidate.length > 0 && !ICE_CANDIDATE_RE.test(ice.candidate))
+    (ice.candidate.length > 0 && !isValidIceCandidateString(ice.candidate))
   ) {
     return {
       ok: false,
@@ -366,6 +449,15 @@ export class SwarmSignalingRelay {
       if (!PEER_ID_RE.test(peerId)) {
         return jsonResponse(
           { error: 'Invalid peerId identifier (4-64 alphanumeric/_- chars required)' },
+          400
+        );
+      }
+      if (containsDecodedGenomeLeak(room) || containsDecodedGenomeLeak(peerId)) {
+        return jsonResponse(
+          {
+            error:
+              'RFC-0002 Air-Gap violation: genomic variant identifiers are prohibited in signaling parameters',
+          },
           400
         );
       }
