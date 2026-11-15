@@ -1,6 +1,67 @@
 import type { Translations } from './types.js'
 
 export const PT_TRANSLATIONS: Translations = {
+  landing: {
+    brandHomeAria: 'Voltar ao início do Plasmid',
+    openWorkspaceBtn: 'Abrir espaço de trabalho',
+    eyebrowBadge: '0 B pessoais enviados • Análise 100% local no navegador',
+    heroTitle:
+      'Compare seu arquivo do 23andMe ou DNA com o NCBI ClinVar com total privacidade no navegador.',
+    heroSubtitle:
+      'Sem cadastro, sem envio para a nuvem e zero bytes do seu DNA fora do seu dispositivo. Solte seu arquivo bruto para verificar variantes clínicas e resposta a medicamentos em segundos.',
+    uploadCardTitle: 'Triagem local privada do seu DNA',
+    uploadCardHint:
+      'Arraste e solte seu arquivo .txt do 23andMe, Ancestry ou .vcf / .vcf.gz aqui, ou clique abaixo para selecionar no dispositivo.',
+    uploadCardActive: 'Solte o arquivo para analisar localmente no cofre isolado OPFS',
+    uploadCardImporting: 'Validando e salvando localmente via OPFS + Rust/WASM…',
+    uploadCtaBtn: 'Enviar meu arquivo de DNA (.vcf, .vcf.gz, 23andMe .txt)',
+    supportedFormatsLabel: 'Formatos aceitos',
+    format23andMe: 'Dados brutos 23andMe (.txt)',
+    formatAncestry: 'Arquivo Ancestry / TSV (.txt)',
+    formatVcf: 'VCF clínico (.vcf / .vcf.gz)',
+    formatAutoLiftover: 'Conversão auto GRCh37 ↔ GRCh38',
+    exploreDemoBtn: (count) => `Explorar demo pública ClinVar (${count} variantes)`,
+    exploreDemoLoadingBtn: 'Explorar demo pública ClinVar',
+    activeVaultBanner: (filename) => `Salvo no cofre local OPFS: ${filename}`,
+    resumeVaultReportBtn: 'Abrir meu relatório ClinVar',
+    livePackCardTitle: 'Pacote público NCBI ClinVar ativo',
+    livePackCardBadge: 'HTTP 206 + Merkle verificado',
+    livePackRowDataset: 'Base de referência',
+    livePackRowVariants: 'Variantes ClinVar indexadas',
+    livePackRowPathogenic: 'Patogênicas / Prov. patogênicas',
+    livePackRowIntegrity: 'Contêiner criptográfico',
+    livePackIntegrityValue: (chunks) => `${chunks} blocos Zstd SHA-256 de 16 KB`,
+    livePackLoadingValue: 'Lendo cabeçalho…',
+    livePackErrorPrefix: 'Erro ao carregar pacote de referência:',
+    zeroBytesValue: '0 B',
+    trustSectionAria: 'Métricas reais de privacidade e base pública',
+    trustZeroEgressLabel: 'Dados pessoais enviados',
+    trustZeroEgressSub: 'Isolados no OPFS do navegador (RFC-0002)',
+    trustLocalWasmLabel: 'Execução local no navegador',
+    trustLocalWasmSub: 'Zero processamento em nuvem ou servidores externos',
+    trustClinvarLabel: 'Variantes reais do NCBI ClinVar',
+    trustClinvarSub: (build) => `Pacote oficial em domínio público (${build})`,
+    trustOpenSourceLabel: 'Licença de código aberto',
+    trustOpenSourceSub: 'Código 100% auditável e ciência aberta',
+    stepsSectionEyebrow: 'Como funciona',
+    stepsSectionTitle: 'Três passos simples do arquivo de DNA ao relatório clínico',
+    stepBadge: (num) => `PASSO ${num}`,
+    step1Title: 'Prepare seu arquivo 23andMe ou VCF',
+    step1Desc:
+      'Use o arquivo .txt baixado do 23andMe / Ancestry ou um .vcf / .vcf.gz. Coordenadas GRCh37 (hg19) e GRCh38 (hg38) são reconhecidas e convertidas automaticamente.',
+    step2Title: 'Análise isolada em OPFS e WASM',
+    step2Desc:
+      'Seu arquivo é gravado apenas no armazenamento privado OPFS do navegador e lido localmente em Rust/WebAssembly, sem enviar nenhum byte pessoal pela rede.',
+    step3Title: 'Cruzamento imediato com ClinVar e fármacos',
+    step3Desc:
+      'Veja em milissegundos variantes patogênicas do NCBI ClinVar, estrelas de revisão e marcadores farmacogenômicos.',
+    privacyTitle: 'Garantia rigorosa de privacidade zero envio',
+    privacyDesc:
+      'Seu genoma pessoal nunca sai do seu aparelho (0 B enviados). Apenas blocos públicos de 16 KB do ClinVar são lidos via HTTP 206, e você pode apagar o cofre OPFS com um clique.',
+    nonDiagnosticTitle: 'Aviso de uso educacional e não diagnóstico',
+    nonDiagnosticDesc:
+      'O Plasmid é uma ferramenta científica e educacional aberta, não um dispositivo médico para diagnóstico clínico. Consulte sempre um médico ou geneticista habilitado.',
+  },
   workspace: {
     languageSelectAria: 'Selecionar idioma da interface',
     navSectionLabel: 'Espaço de trabalho',
@@ -62,6 +123,7 @@ export const PT_TRANSLATIONS: Translations = {
     title: 'Plasmid',
     subtitle: 'Wiki genômica descentralizada e streaming .plasmid por intervalos',
     tabs: {
+      home: 'Início / Começar',
       navigator: 'Navegador genômico',
       intersection: 'Relatório ClinVar',
       viewer: 'Visualizador HTTP',

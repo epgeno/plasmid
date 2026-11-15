@@ -13,6 +13,7 @@ import {
   FileText,
   Globe,
   HardDrive,
+  Home,
   Layers,
   Lock,
   Radio,
@@ -39,7 +40,14 @@ import {
 import { ClinicalSummaryBento } from './components/ClinicalSummaryBento'
 import { ClinVarIntersectionPanel } from './components/ClinVarIntersectionPanel'
 import { GenomeNavigator } from './components/GenomeNavigator'
+import { LandingView } from './components/LandingView'
 import { SwarmPanel } from './components/SwarmPanel'
+import {
+  formatHashForWorkspaceTab,
+  parseWorkspaceTabFromHash,
+  resolvePostVaultImportTab,
+  type WorkspaceTabId,
+} from './services/workspaceRouting'
 import {
   DEFAULT_OPFS_FILENAME,
   plasmidContainerClient,
@@ -63,15 +71,6 @@ import type {
   LiftoverResult,
   WasmMerkleVerification,
 } from './types/plasmid'
-
-type WorkspaceTabId =
-  | 'navigator'
-  | 'intersection'
-  | 'stream'
-  | 'liftover'
-  | 'wiki'
-  | 'swarm'
-  | 'governance'
 
 interface ParsedCoordinateQuery {
   chrom: string
@@ -123,7 +122,44 @@ function parseCoordinateQuery(raw: string): ParsedCoordinateQuery | null {
 export default function App() {
   const initialVaultPath = opfs.getActiveVaultPath()
   const [lang, setLang] = useState<SupportedLanguage>(() => detectInitialLanguage())
-  const [activeTab, setActiveTab] = useState<WorkspaceTabId>('navigator')
+  const [activeTab, setActiveTabState] = useState<WorkspaceTabId>(() =>
+    typeof window !== 'undefined' ? parseWorkspaceTabFromHash(window.location.hash) : 'home'
+  )
+  const activeTabRef = useRef<WorkspaceTabId>(activeTab)
+  activeTabRef.current = activeTab
+
+  const setActiveTab = useCallback((nextTab: WorkspaceTabId) => {
+    const prevTab = activeTabRef.current
+    activeTabRef.current = nextTab
+    setActiveTabState(nextTab)
+    if (typeof window !== 'undefined') {
+      const nextHash = formatHashForWorkspaceTab(nextTab)
+      if (!(nextTab === 'home' && (!window.location.hash || window.location.hash === '#'))) {
+        if (window.location.hash !== nextHash) {
+          window.history.pushState(null, '', nextHash)
+        }
+      }
+      if (prevTab !== nextTab && (prevTab === 'home' || nextTab === 'home')) {
+        window.scrollTo(0, 0)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const syncFromHash = () => {
+      const resolved = parseWorkspaceTabFromHash(window.location.hash)
+      activeTabRef.current = resolved
+      setActiveTabState(resolved)
+    }
+    window.addEventListener('hashchange', syncFromHash)
+    window.addEventListener('popstate', syncFromHash)
+    return () => {
+      window.removeEventListener('hashchange', syncFromHash)
+      window.removeEventListener('popstate', syncFromHash)
+    }
+  }, [])
+
   const [railCollapsed, setRailCollapsed] = useState<boolean>(false)
   const [isCompactViewport, setIsCompactViewport] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < 1200 : false
@@ -154,8 +190,51 @@ export default function App() {
   const [vaultError, setVaultError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const sourceReqSeqRef = useRef<number>(0)
+  const vaultImportSeqRef = useRef<number>(0)
+  const catalogLoadCountRef = useRef<number>(0)
+  const vaultImportCountRef = useRef<number>(0)
+  const sourceSwitchCountRef = useRef<number>(0)
+
+  const beginCatalogLoad = useCallback(() => {
+    catalogLoadCountRef.current += 1
+    setCatalogLoading(true)
+  }, [])
+
+  const endCatalogLoad = useCallback(() => {
+    catalogLoadCountRef.current = Math.max(0, catalogLoadCountRef.current - 1)
+    if (catalogLoadCountRef.current === 0) {
+      setCatalogLoading(false)
+    }
+  }, [])
+
+  const beginVaultImport = useCallback(() => {
+    vaultImportCountRef.current += 1
+    setVaultImporting(true)
+  }, [])
+
+  const endVaultImport = useCallback(() => {
+    vaultImportCountRef.current = Math.max(0, vaultImportCountRef.current - 1)
+    if (vaultImportCountRef.current === 0) {
+      setVaultImporting(false)
+    }
+  }, [])
+
+  const beginSourceSwitch = useCallback(() => {
+    sourceSwitchCountRef.current += 1
+    setSourceSwitching(true)
+  }, [])
+
+  const endSourceSwitch = useCallback(() => {
+    sourceSwitchCountRef.current = Math.max(0, sourceSwitchCountRef.current - 1)
+    if (sourceSwitchCountRef.current === 0) {
+      setSourceSwitching(false)
+    }
+  }, [])
 
   const [session, setSession] = useState<ContainerSession | null>(null)
+  const [publicSession, setPublicSession] = useState<ContainerSession | null>(null)
+  const [publicSessionError, setPublicSessionError] = useState<string | null>(null)
+  const [sourceSwitching, setSourceSwitching] = useState<boolean>(false)
   const [catalogItems, setCatalogItems] = useState<CatalogVariantItem[]>([])
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [catalogLoading, setCatalogLoading] = useState<boolean>(true)
@@ -218,6 +297,7 @@ export default function App() {
   // Plausible-style '/' keyboard shortcut to focus global locus/gene search
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (activeTabRef.current === 'home') return
       if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return
       const target = e.target as HTMLElement | null
       if (target) {
@@ -261,10 +341,29 @@ export default function App() {
     return files
   }, [])
 
+  const loadPublicReferenceSession = useCallback(async () => {
+    setPublicSessionError(null)
+    try {
+      const publicCached = await opfs.hasFile(DEFAULT_OPFS_FILENAME)
+      const pubSess = await plasmidContainerClient.getSession({
+        sourceMode: 'public',
+        airgapped: publicCached,
+        opfsFilename: DEFAULT_OPFS_FILENAME,
+      })
+      setPublicSession(pubSess)
+      setPublicSessionError(null)
+      return pubSess
+    } catch (err: unknown) {
+      setPublicSessionError(err instanceof Error ? err.message : String(err))
+      return null
+    }
+  }, [])
+
   const activateDataSource = useCallback(
-    async (nextMode: DataSourceMode, nextOpfsPath: string) => {
+    async (nextMode: DataSourceMode, nextOpfsPath: string): Promise<boolean> => {
       const reqSeq = ++sourceReqSeqRef.current
-      setCatalogLoading(true)
+      beginSourceSwitch()
+      beginCatalogLoad()
       setCatalogError(null)
       setMerkleResult(null)
       setMerkleElapsedMs(null)
@@ -282,24 +381,35 @@ export default function App() {
             opfsFilename: targetFile,
           })
 
-        if (reqSeq !== sourceReqSeqRef.current) return
+        if (reqSeq !== sourceReqSeqRef.current) return false
         setNavigatorJumpTarget(null)
         setSourceMode(nextMode)
         setActiveOpfsFilename(targetFile)
         opfs.setActiveVaultPath(nextMode === 'vault' ? targetFile : null)
         setSession(loadedSession)
+        if (nextMode === 'public') {
+          setPublicSession(loadedSession)
+          setPublicSessionError(null)
+        }
         setCatalogItems(items)
         setSelectedKey(items[0]?.key ?? null)
+        return true
       } catch (err: unknown) {
-        if (reqSeq !== sourceReqSeqRef.current) return
-        setCatalogError(err instanceof Error ? err.message : String(err))
-      } finally {
-        if (reqSeq === sourceReqSeqRef.current) {
-          setCatalogLoading(false)
+        if (reqSeq !== sourceReqSeqRef.current) return false
+        const msg = err instanceof Error ? err.message : String(err)
+        setCatalogError(msg)
+        if (nextMode === 'public') {
+          setPublicSessionError(msg)
+        } else {
+          setVaultError(msg)
         }
+        return false
+      } finally {
+        endCatalogLoad()
+        endSourceSwitch()
       }
     },
-    []
+    [beginCatalogLoad, beginSourceSwitch, endCatalogLoad, endSourceSwitch]
   )
 
   // Synchronize <html lang="..."> and document.title with active UI language
@@ -313,7 +423,7 @@ export default function App() {
 
     const bootstrap = async () => {
       const reqSeq = ++sourceReqSeqRef.current
-      setCatalogLoading(true)
+      beginCatalogLoad()
       setCatalogError(null)
       try {
         const files = await refreshVaultMetadata()
@@ -327,8 +437,30 @@ export default function App() {
 
         const mode: DataSourceMode = validSavedVault ? 'vault' : 'public'
         const targetFile = validSavedVault ?? DEFAULT_OPFS_FILENAME
-        const airgapped =
-          mode === 'vault' ? true : await opfs.hasFile(DEFAULT_OPFS_FILENAME)
+        const publicCached = await opfs.hasFile(DEFAULT_OPFS_FILENAME)
+        const airgapped = mode === 'vault' ? true : publicCached
+
+        // Always load authentic public ClinVar demo.plasmid header & pyramid metadata (deduplicated)
+        setPublicSessionError(null)
+        void plasmidContainerClient
+          .getSession({
+            sourceMode: 'public',
+            airgapped: publicCached,
+            opfsFilename: DEFAULT_OPFS_FILENAME,
+          })
+          .then((pubSess) => {
+            if (!cancelled) {
+              setPublicSession(pubSess)
+              setPublicSessionError(null)
+            }
+          })
+          .catch((pubErr: unknown) => {
+            if (!cancelled) {
+              setPublicSessionError(
+                pubErr instanceof Error ? pubErr.message : String(pubErr)
+              )
+            }
+          })
 
         const { session: loadedSession, items } =
           await plasmidContainerClient.loadCatalogVariants({
@@ -341,6 +473,9 @@ export default function App() {
         setSourceMode(mode)
         setActiveOpfsFilename(targetFile)
         setSession(loadedSession)
+        if (mode === 'public') {
+          setPublicSession(loadedSession)
+        }
         setCatalogItems(items)
         if (items.length > 0) {
           setSelectedKey((prev) =>
@@ -353,7 +488,7 @@ export default function App() {
         if (cancelled || reqSeq !== sourceReqSeqRef.current) return
         setCatalogError(err instanceof Error ? err.message : String(err))
       } finally {
-        if (!cancelled && reqSeq === sourceReqSeqRef.current) setCatalogLoading(false)
+        endCatalogLoad()
       }
     }
 
@@ -361,11 +496,13 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [refreshVaultMetadata])
+  }, [refreshVaultMetadata, beginCatalogLoad, endCatalogLoad])
 
   const handleImportVaultFile = async (file: File) => {
-    const reqSeq = ++sourceReqSeqRef.current
-    setVaultImporting(true)
+    const importSeq = ++vaultImportSeqRef.current
+    const initiatedFromHome = activeTabRef.current === 'home'
+    let committedReqSeq: number | null = null
+    beginVaultImport()
     setVaultError(null)
 
     try {
@@ -378,7 +515,8 @@ export default function App() {
       const sanitizedName = sanitizeVaultFilename(file.name)
       const kind = detectVaultFileKind(sanitizedName, bytes)
 
-      // Validate in local WASM BEFORE writing to OPFS so invalid uploads never overwrite existing vault files
+      // Validate in local WASM BEFORE advancing sourceReqSeqRef or writing to OPFS
+      // so invalid uploads never clobber in-flight catalog loads or existing vault files
       if (kind === 'vcf') {
         await decoderClient.parseVcfDataset(bytes, 'GRCh38')
       } else {
@@ -389,6 +527,11 @@ export default function App() {
           )
         }
       }
+
+      if (importSeq !== vaultImportSeqRef.current) return
+
+      committedReqSeq = ++sourceReqSeqRef.current
+      beginCatalogLoad()
 
       const candidatePath = `${VAULT_DIR_NAME}/${sanitizedName}`
       plasmidContainerClient.evictFile(candidatePath)
@@ -402,7 +545,7 @@ export default function App() {
         })
 
       await refreshVaultMetadata()
-      if (reqSeq !== sourceReqSeqRef.current) return
+      if (committedReqSeq !== sourceReqSeqRef.current) return
 
       opfs.setActiveVaultPath(savedEntry.opfsPath)
       setNavigatorJumpTarget(null)
@@ -415,13 +558,26 @@ export default function App() {
       setMerkleResult(null)
       setMerkleElapsedMs(null)
       setVerifyError(null)
+
+      const nextTab = resolvePostVaultImportTab(
+        initiatedFromHome ? 'home' : activeTabRef.current
+      )
+      if (nextTab !== activeTabRef.current) {
+        setActiveTab(nextTab)
+      }
     } catch (err: unknown) {
       await refreshVaultMetadata()
-      if (reqSeq === sourceReqSeqRef.current) {
+      if (
+        importSeq === vaultImportSeqRef.current &&
+        (committedReqSeq === null || committedReqSeq === sourceReqSeqRef.current)
+      ) {
         setVaultError(err instanceof Error ? err.message : String(err))
       }
     } finally {
-      setVaultImporting(false)
+      if (committedReqSeq !== null) {
+        endCatalogLoad()
+      }
+      endVaultImport()
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
@@ -697,6 +853,7 @@ export default function App() {
   const tabs = useMemo(
     () =>
       [
+        { id: 'home', icon: Home, label: t.header.tabs.home },
         { id: 'navigator', icon: Compass, label: t.header.tabs.navigator },
         { id: 'intersection', icon: Stethoscope, label: t.header.tabs.intersection },
         { id: 'stream', icon: Layers, label: t.header.tabs.viewer },
@@ -717,79 +874,230 @@ export default function App() {
   const showVaultBody =
     !isCompactViewport || mobileVaultExpanded || Boolean(vaultError) || vaultImporting
 
+  const handleRetryPublicPack = useCallback(async () => {
+    if (vaultImporting || sourceSwitching) return
+    if (sourceMode === 'public') {
+      await activateDataSource('public', DEFAULT_OPFS_FILENAME)
+    } else {
+      await loadPublicReferenceSession()
+    }
+  }, [
+    vaultImporting,
+    sourceSwitching,
+    sourceMode,
+    activateDataSource,
+    loadPublicReferenceSession,
+  ])
+
+  const handleExplorePublicDemo = useCallback(async () => {
+    if (vaultImporting || sourceSwitching) return
+    if (
+      sourceMode !== 'public' ||
+      !session ||
+      Boolean(catalogError) ||
+      Boolean(publicSessionError)
+    ) {
+      const ok = await activateDataSource('public', DEFAULT_OPFS_FILENAME)
+      if (!ok) return
+    }
+    setActiveTab('navigator')
+  }, [
+    vaultImporting,
+    sourceSwitching,
+    sourceMode,
+    session,
+    catalogError,
+    publicSessionError,
+    activateDataSource,
+    setActiveTab,
+  ])
+
+  const handleOpenSavedVaultReport = useCallback(async () => {
+    if (vaultImporting || sourceSwitching) return
+    const targetVaultEntry =
+      (sourceMode === 'vault'
+        ? vaultFiles.find((f) => f.opfsPath === activeOpfsFilename)
+        : null) ??
+      vaultFiles[0] ??
+      null
+
+    if (
+      targetVaultEntry &&
+      (sourceMode !== 'vault' ||
+        activeOpfsFilename !== targetVaultEntry.opfsPath ||
+        !session ||
+        Boolean(catalogError))
+    ) {
+      const ok = await activateDataSource('vault', targetVaultEntry.opfsPath)
+      if (!ok) return
+    }
+    setActiveTab('intersection')
+  }, [
+    vaultImporting,
+    sourceSwitching,
+    vaultFiles,
+    sourceMode,
+    activeOpfsFilename,
+    session,
+    catalogError,
+    activateDataSource,
+    setActiveTab,
+  ])
+
+  const handleOpenWorkspace = useCallback(async () => {
+    if (vaultImporting || sourceSwitching) return
+    if (!session || Boolean(catalogError)) {
+      const activeVaultEntry =
+        sourceMode === 'vault'
+          ? (vaultFiles.find((f) => f.opfsPath === activeOpfsFilename) ??
+            vaultFiles[0] ??
+            null)
+          : null
+      const nextMode: DataSourceMode = activeVaultEntry ? 'vault' : 'public'
+      const nextPath = activeVaultEntry ? activeVaultEntry.opfsPath : DEFAULT_OPFS_FILENAME
+      const ok = await activateDataSource(nextMode, nextPath)
+      if (!ok) return
+    }
+    setActiveTab('navigator')
+  }, [
+    vaultImporting,
+    sourceSwitching,
+    session,
+    catalogError,
+    sourceMode,
+    vaultFiles,
+    activeOpfsFilename,
+    activateDataSource,
+    setActiveTab,
+  ])
+
   return (
-    <div className={`plasmid-workspace ${railCollapsed ? 'rail-collapsed' : ''}`}>
-      {/* ===================================================================
-          1. LEFT NAVIGATION RAIL (Desktop >=1200px) & COMPACT MOBILE GNB (<1200px)
-         =================================================================== */}
-      <aside className="plasmid-left-rail">
-        {!isCompactViewport ? (
-          /* Desktop Collapsible Rail */
-          <div
-            className="plasmid-desktop-only"
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              height: '100%',
-              gap: '16px',
-            }}
-          >
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              {/* Brand + Collapse Toggle */}
+    <>
+      {/* Hidden File Input ALWAYS Mounted Across LandingView & 3-Column Workspace */}
+      <input
+        ref={fileInputRef}
+        data-testid="vault-file-input"
+        type="file"
+        accept=".vcf,.vcf.gz,.vcf.bgz,.plasmid,.txt,.txt.gz,.tsv,.tsv.gz"
+        onChange={(e) => {
+          const chosen = e.target.files?.[0]
+          if (chosen) {
+            void handleImportVaultFile(chosen)
+          }
+        }}
+        style={{ display: 'none' }}
+      />
+
+      {activeTab === 'home' ? (
+        <LandingView
+          lang={lang}
+          onChangeLanguage={handleLanguageChange}
+          publicSession={publicSession}
+          publicSessionError={publicSessionError}
+          onRetryPublicSession={() => void handleRetryPublicPack()}
+          vaultFiles={vaultFiles}
+          activeVaultFilename={sourceMode === 'vault' ? activeOpfsFilename : null}
+          vaultImporting={vaultImporting}
+          navigationBusy={sourceSwitching}
+          vaultError={vaultError}
+          onDismissVaultError={() => setVaultError(null)}
+          onTriggerFileSelect={() => fileInputRef.current?.click()}
+          onDropVaultFile={(file) => void handleImportVaultFile(file)}
+          onExplorePublicDemo={() => void handleExplorePublicDemo()}
+          onOpenWorkspace={() => void handleOpenWorkspace()}
+          onOpenVaultReport={() => void handleOpenSavedVaultReport()}
+          onResetHome={() => setActiveTab('home')}
+        />
+      ) : (
+        <div className={`plasmid-workspace ${railCollapsed ? 'rail-collapsed' : ''}`}>
+          {/* ===================================================================
+              1. LEFT NAVIGATION RAIL (Desktop >=1200px) & COMPACT MOBILE GNB (<1200px)
+             =================================================================== */}
+          <aside className="plasmid-left-rail">
+            {!isCompactViewport ? (
+              /* Desktop Collapsible Rail */
               <div
+                className="plasmid-desktop-only"
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: railCollapsed ? 'center' : 'space-between',
-                  gap: '8px',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  height: '100%',
+                  gap: '16px',
                 }}
               >
-                {!railCollapsed && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                    <div
-                      style={{
-                        width: '30px',
-                        height: '30px',
-                        backgroundColor: '#0f172a',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <Cpu size={17} color="#ffffff" />
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                  {/* Brand + Collapse Toggle */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: railCollapsed ? 'center' : 'space-between',
+                      gap: '8px',
+                    }}
+                  >
+                    {!railCollapsed && (
+                      <button
+                        type="button"
+                        data-testid="brand-home-btn"
+                        aria-label={t.landing.brandHomeAria}
+                        title={t.landing.brandHomeAria}
+                        onClick={() => setActiveTab('home')}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          minWidth: 0,
+                          background: 'transparent',
+                          border: 'none',
+                          padding: 0,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <div
                           style={{
-                            fontSize: '16px',
-                            fontWeight: 800,
-                            letterSpacing: '-0.02em',
-                            color: '#0f172a',
+                            width: '30px',
+                            height: '30px',
+                            backgroundColor: '#0f172a',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
                           }}
                         >
-                          {t.header.title}
-                        </span>
-                        <span
-                          className="tabular-nums"
-                          style={{
-                            fontSize: '10px',
-                            padding: '1px 5px',
-                            backgroundColor: '#e2e8f0',
-                            color: '#334155',
-                            borderRadius: '4px',
-                            fontWeight: 700,
-                          }}
-                        >
-                          v0.1.0
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                          <Cpu size={17} color="#ffffff" />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span
+                              style={{
+                                fontSize: '16px',
+                                fontWeight: 800,
+                                letterSpacing: '-0.02em',
+                                color: '#0f172a',
+                              }}
+                            >
+                              {t.header.title}
+                            </span>
+                            <span
+                              className="tabular-nums"
+                              style={{
+                                fontSize: '10px',
+                                padding: '1px 5px',
+                                backgroundColor: '#e2e8f0',
+                                color: '#334155',
+                                borderRadius: '4px',
+                                fontWeight: 700,
+                              }}
+                            >
+                              v0.1.0
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    )}
 
                 <button
                   type="button"
@@ -1049,7 +1357,23 @@ export default function App() {
                 minWidth: 0,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+              <button
+                type="button"
+                data-testid="mobile-brand-home-btn"
+                aria-label={t.landing.brandHomeAria}
+                onClick={() => setActiveTab('home')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  minWidth: 0,
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
                 <div
                   style={{
                     width: '26px',
@@ -1093,7 +1417,7 @@ export default function App() {
                   <ShieldCheck size={11} />
                   <span>0 B</span>
                 </span>
-              </div>
+              </button>
 
               <div
                 style={{
@@ -2947,21 +3271,6 @@ export default function App() {
             minWidth: 0,
           }}
         >
-          {/* Hidden File Input ALWAYS Mounted for Desktop & Mobile */}
-          <input
-            ref={fileInputRef}
-            data-testid="vault-file-input"
-            type="file"
-            accept=".vcf,.vcf.gz,.vcf.bgz,.plasmid,.txt,.txt.gz,.tsv,.tsv.gz"
-            onChange={(e) => {
-              const chosen = e.target.files?.[0]
-              if (chosen) {
-                void handleImportVaultFile(chosen)
-              }
-            }}
-            style={{ display: 'none' }}
-          />
-
           {/* Compact Mobile Accordion Header (<1200px) */}
           {isCompactViewport ? (
             <div
@@ -3135,7 +3444,9 @@ export default function App() {
                 onDragLeave={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
-                  setIsDraggingVault(false)
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                    setIsDraggingVault(false)
+                  }
                 }}
                 onDrop={(e) => {
                   e.preventDefault()
@@ -3295,7 +3606,7 @@ export default function App() {
                   type="button"
                   data-testid="source-public-demo"
                   onClick={() => {
-                    if (sourceMode !== 'public') {
+                    if (sourceMode !== 'public' || !session || Boolean(catalogError)) {
                       void activateDataSource('public', DEFAULT_OPFS_FILENAME)
                     }
                   }}
@@ -3345,7 +3656,7 @@ export default function App() {
                         data-vault-name={vf.name}
                         title={vf.name}
                         onClick={() => {
-                          if (!isSelectedVault) {
+                          if (!isSelectedVault || !session || Boolean(catalogError)) {
                             void activateDataSource('vault', vf.opfsPath)
                           }
                         }}
@@ -3648,6 +3959,8 @@ export default function App() {
           </div>
         </div>
       </aside>
-    </div>
+        </div>
+      )}
+    </>
   )
 }

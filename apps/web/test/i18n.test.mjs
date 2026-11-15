@@ -19,6 +19,7 @@ const EXPECTED_CODES = ['en', 'es', 'fr', 'de', 'pt', 'ko', 'ja', 'zh'];
 
 const ALLOWED_IDENTICAL_PROPER_NOUN_PATHS = new Set([
   'header.title',
+  'landing.zeroBytesValue',
   'intersection.clinvarLinkLabel',
   'navigator.audit.badgeWorker',
   'swarm.kpiRttSub',
@@ -231,5 +232,91 @@ test('Vault error, ClinVar significance, and Navigator audit helpers localize ac
   for (const lang of ['ko', 'ja', 'zh']) {
     const sigPath = localizeClinicalSignificance('Pathogenic', lang);
     assert.equal(cjkRegex.test(sigPath), true);
+    const sigPipe = localizeClinicalSignificance('Likely benign|other', lang);
+    assert.equal(cjkRegex.test(sigPipe), true);
+    assert.equal(/Likely benign/i.test(sigPipe), false);
+    assert.equal(sigPipe, TRANSLATIONS[lang].clinicalSig.likelyBenign);
+  }
+
+  // Exact token parsing: Conflicting_classifications_of_pathogenicity must NEVER misclassify as Pathogenic
+  for (const code of EXPECTED_CODES) {
+    const sig = TRANSLATIONS[code].clinicalSig;
+    assert.equal(
+      localizeClinicalSignificance('Likely_benign|other', code),
+      sig.likelyBenign
+    );
+    assert.equal(
+      localizeClinicalSignificance('Likely_pathogenic|risk_factor', code),
+      `${sig.likelyPathogenic} · ${sig.riskFactor}`
+    );
+    assert.equal(
+      localizeClinicalSignificance('Conflicting_classifications_of_pathogenicity|risk_factor', code),
+      `${sig.conflicting} · ${sig.riskFactor}`
+    );
+    assert.equal(
+      localizeClinicalSignificance('Conflicting_classifications_of_pathogenicity|drug_response|other', code),
+      `${sig.conflicting} · ${sig.drugResponse}`
+    );
+    assert.equal(
+      localizeClinicalSignificance('Pathogenic/Likely_pathogenic|drug_response', code),
+      `${sig.pathogenicLikelyPathogenic} · ${sig.drugResponse}`
+    );
+    assert.equal(
+      localizeClinicalSignificance('Benign/Likely_benign', code),
+      sig.benignLikelyBenign
+    );
+  }
+});
+
+test('P7 LandingView & Home tab translations cover all 8 languages with dynamic ClinVar counts and zero CJK/Latin cross-leakage', () => {
+  const cjkRegex = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
+
+  for (const code of EXPECTED_CODES) {
+    const dict = TRANSLATIONS[code];
+    assert.equal(typeof dict.header.tabs.home, 'string', `Missing header.tabs.home for ${code}`);
+    assert.ok(dict.header.tabs.home.trim().length > 0);
+    assert.ok(dict.landing, `Missing landing section for ${code}`);
+
+    // Dynamic ClinVar count CTA must interpolate live runtime count without hardcoded 17,889
+    const customDemoLabel = dict.landing.exploreDemoBtn('24,500');
+    assert.ok(
+      customDemoLabel.includes('24,500'),
+      `landing.exploreDemoBtn in ${code} did not interpolate live count: ${customDemoLabel}`
+    );
+    assert.ok(
+      !customDemoLabel.includes('17,889') && !customDemoLabel.includes('17889'),
+      `landing.exploreDemoBtn in ${code} hardcoded 17,889: ${customDemoLabel}`
+    );
+
+    const activeBanner = dict.landing.activeVaultBanner('genome_23andme_v5.txt');
+    assert.ok(activeBanner.includes('genome_23andme_v5.txt'));
+
+    const buildSub = dict.landing.trustClinvarSub('GRCh38');
+    assert.ok(buildSub.includes('GRCh38'));
+
+    const integrityVal = dict.landing.livePackIntegrityValue(90);
+    assert.ok(integrityVal.includes('90'));
+
+    if (['en', 'es', 'fr', 'de', 'pt'].includes(code)) {
+      for (const [leafPath, val] of collectLeaves(dict.landing)) {
+        const text = typeof val === 'function' ? sampleFunctionOutput(val) : val;
+        assert.equal(
+          cjkRegex.test(text),
+          false,
+          `Latin language "${code}" leaked CJK in landing.${leafPath}: ${text}`
+        );
+      }
+    } else {
+      assert.equal(
+        cjkRegex.test(dict.landing.heroTitle),
+        true,
+        `CJK language "${code}" missing native script in landing.heroTitle`
+      );
+      assert.equal(
+        cjkRegex.test(dict.header.tabs.home),
+        true,
+        `CJK language "${code}" missing native script in header.tabs.home`
+      );
+    }
   }
 });

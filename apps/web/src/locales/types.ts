@@ -174,7 +174,62 @@ export interface VaultErrorTranslations {
   unrecognizedFormat: string
 }
 
+export interface LandingTranslations {
+  brandHomeAria: string
+  openWorkspaceBtn: string
+  eyebrowBadge: string
+  heroTitle: string
+  heroSubtitle: string
+  uploadCardTitle: string
+  uploadCardHint: string
+  uploadCardActive: string
+  uploadCardImporting: string
+  uploadCtaBtn: string
+  supportedFormatsLabel: string
+  format23andMe: string
+  formatAncestry: string
+  formatVcf: string
+  formatAutoLiftover: string
+  exploreDemoBtn: (variantCount: string) => string
+  exploreDemoLoadingBtn: string
+  activeVaultBanner: (filename: string) => string
+  resumeVaultReportBtn: string
+  livePackCardTitle: string
+  livePackCardBadge: string
+  livePackRowDataset: string
+  livePackRowVariants: string
+  livePackRowPathogenic: string
+  livePackRowIntegrity: string
+  livePackIntegrityValue: (chunks: number | string) => string
+  livePackLoadingValue: string
+  livePackErrorPrefix: string
+  zeroBytesValue: string
+  trustSectionAria: string
+  trustZeroEgressLabel: string
+  trustZeroEgressSub: string
+  trustLocalWasmLabel: string
+  trustLocalWasmSub: string
+  trustClinvarLabel: string
+  trustClinvarSub: (build: string) => string
+  trustOpenSourceLabel: string
+  trustOpenSourceSub: string
+  stepsSectionEyebrow: string
+  stepsSectionTitle: string
+  stepBadge: (num: string) => string
+  step1Title: string
+  step1Desc: string
+  step2Title: string
+  step2Desc: string
+  step3Title: string
+  step3Desc: string
+  privacyTitle: string
+  privacyDesc: string
+  nonDiagnosticTitle: string
+  nonDiagnosticDesc: string
+}
+
 export interface Translations {
+  landing: LandingTranslations
   workspace: WorkspaceTranslations
   clinicalSig: ClinicalSignificanceTranslations
   disclaimer: {
@@ -186,6 +241,7 @@ export interface Translations {
     title: string
     subtitle: string
     tabs: {
+      home: string
       navigator: string
       intersection: string
       viewer: string

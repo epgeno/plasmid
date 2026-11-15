@@ -1,6 +1,67 @@
 import type { Translations } from './types.js'
 
 export const EN_TRANSLATIONS: Translations = {
+  landing: {
+    brandHomeAria: 'Return to Plasmid home',
+    openWorkspaceBtn: 'Open Workspace',
+    eyebrowBadge: '0 B Personal Data Sent • 100% Local Browser Analysis',
+    heroTitle:
+      'Screen your 23andMe or DNA file against NCBI ClinVar — privately in your browser.',
+    heroSubtitle:
+      'No account, no cloud upload, and zero personal bytes ever leave your device. Drop your raw DNA file to check clinical health and drug-response variants in seconds.',
+    uploadCardTitle: 'Private Local DNA Screening',
+    uploadCardHint:
+      'Drag & drop your 23andMe .txt, Ancestry .txt, or .vcf / .vcf.gz file here, or click below to select from your device.',
+    uploadCardActive: 'Release file to analyze locally inside your OPFS Air-Gap Vault',
+    uploadCardImporting: 'Validating & saving locally in OPFS + Rust/WASM…',
+    uploadCtaBtn: 'Upload My DNA File (.vcf, .vcf.gz, 23andMe .txt)',
+    supportedFormatsLabel: 'Supported files',
+    format23andMe: '23andMe raw .txt',
+    formatAncestry: 'Ancestry / TSV .txt',
+    formatVcf: 'Clinical .vcf / .vcf.gz',
+    formatAutoLiftover: 'GRCh37 ↔ GRCh38 auto-liftover',
+    exploreDemoBtn: (count) => `Explore Public ClinVar Demo (${count} variants)`,
+    exploreDemoLoadingBtn: 'Explore Public ClinVar Demo',
+    activeVaultBanner: (filename) => `Saved in local OPFS Vault: ${filename}`,
+    resumeVaultReportBtn: 'Open My ClinVar Report',
+    livePackCardTitle: 'Live Public ClinVar Reference Pack',
+    livePackCardBadge: 'HTTP 206 + Merkle Verified',
+    livePackRowDataset: 'Reference Dataset',
+    livePackRowVariants: 'Indexed ClinVar Loci',
+    livePackRowPathogenic: 'Pathogenic / Likely Pathogenic',
+    livePackRowIntegrity: 'Cryptographic Container',
+    livePackIntegrityValue: (chunks) => `${chunks} × 16 KB Zstd SHA-256 chunks`,
+    livePackLoadingValue: 'Loading header…',
+    livePackErrorPrefix: 'Reference pack load error:',
+    zeroBytesValue: '0 B',
+    trustSectionAria: 'Measured privacy and reference dataset metrics',
+    trustZeroEgressLabel: 'Personal Data Sent',
+    trustZeroEgressSub: 'Air-gapped inside browser OPFS (RFC-0002)',
+    trustLocalWasmLabel: 'In-Browser Execution',
+    trustLocalWasmSub: 'Zero server compute or cloud uploads',
+    trustClinvarLabel: 'Real NCBI ClinVar Variants',
+    trustClinvarSub: (build) => `Official ${build} public domain pack`,
+    trustOpenSourceLabel: 'Open-Source License',
+    trustOpenSourceSub: 'Fully auditable code & public science data',
+    stepsSectionEyebrow: 'How It Works',
+    stepsSectionTitle: 'Three steps from raw DNA file to clinical clarity',
+    stepBadge: (num) => `STEP ${num}`,
+    step1Title: 'Prepare your 23andMe or VCF file',
+    step1Desc:
+      'Use an uncompressed or gzipped .vcf, .vcf.gz, or raw 23andMe / Ancestry .txt download. Both GRCh37 (hg19) and GRCh38 (hg38) coordinates are automatically recognized.',
+    step2Title: 'Air-gapped OPFS & WASM analysis',
+    step2Desc:
+      'Your DNA file is stored inside your browser’s isolated Origin Private File System and parsed locally in Rust/WebAssembly — zero personal bytes ever cross the network.',
+    step3Title: 'Instant ClinVar & drug-response match',
+    step3Desc:
+      'Compare your genotypes against NCBI ClinVar pathogenic variants, review stars, and pharmacogenomic drug-response markers in milliseconds.',
+    privacyTitle: 'Strict Zero-Egress Privacy Guarantee',
+    privacyDesc:
+      'Your personal genome never leaves your device (0 B outbound). Only coarse 16 KB public ClinVar Zstd blocks are fetched via HTTP 206 Range requests, and you can erase your local OPFS Vault in one click anytime.',
+    nonDiagnosticTitle: 'Research & Educational Use Notice',
+    nonDiagnosticDesc:
+      'Plasmid is an open scientific and educational tool, not a clinical diagnostic medical device. Always consult a certified physician or genetic counselor before making health decisions.',
+  },
   workspace: {
     languageSelectAria: 'Select interface language',
     navSectionLabel: 'Workspace',
@@ -62,6 +123,7 @@ export const EN_TRANSLATIONS: Translations = {
     title: 'Plasmid',
     subtitle: 'Decentralized Genomic Wiki & .plasmid Byte-Range Streaming',
     tabs: {
+      home: 'Home / Start',
       navigator: 'Genome Navigator',
       intersection: 'ClinVar Match',
       viewer: 'Data Viewer',

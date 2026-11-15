@@ -1,6 +1,67 @@
 import type { Translations } from './types.js'
 
 export const DE_TRANSLATIONS: Translations = {
+  landing: {
+    brandHomeAria: 'Zurück zur Plasmid-Startseite',
+    openWorkspaceBtn: 'Arbeitsbereich öffnen',
+    eyebrowBadge: '0 B persönliche Daten gesendet • 100 % lokale Browser-Analyse',
+    heroTitle:
+      'Prüfen Sie Ihre 23andMe- oder DNA-Datei privat im Browser gegen NCBI ClinVar.',
+    heroSubtitle:
+      'Kein Konto, kein Cloud-Upload und kein einziges Byte Ihrer DNA verlässt Ihr Gerät. Ziehen Sie Ihre Rohdatendatei hinein, um klinische Varianten und Arzneimittelwirkungen in Sekunden abzugleichen.',
+    uploadCardTitle: 'Private lokale DNA-Auswertung',
+    uploadCardHint:
+      'Ziehen Sie Ihre 23andMe-.txt-, Ancestry-.txt- oder .vcf- / .vcf.gz-Datei hierher oder wählen Sie sie per Klick von Ihrem Gerät aus.',
+    uploadCardActive: 'Loslassen, um die Datei lokal im isolierten OPFS-Tresor zu prüfen',
+    uploadCardImporting: 'Lokale Prüfung & Speicherung in OPFS + Rust/WASM…',
+    uploadCtaBtn: 'Meine DNA-Datei laden (.vcf, .vcf.gz, 23andMe .txt)',
+    supportedFormatsLabel: 'Unterstützte Formate',
+    format23andMe: '23andMe-Rohdaten (.txt)',
+    formatAncestry: 'Ancestry- / TSV-Datei (.txt)',
+    formatVcf: 'Klinische .vcf / .vcf.gz',
+    formatAutoLiftover: 'Auto-Liftover GRCh37 ↔ GRCh38',
+    exploreDemoBtn: (count) => `Öffentliche ClinVar-Demo erkunden (${count} Varianten)`,
+    exploreDemoLoadingBtn: 'Öffentliche ClinVar-Demo erkunden',
+    activeVaultBanner: (filename) => `Im lokalen OPFS-Tresor bereit: ${filename}`,
+    resumeVaultReportBtn: 'Meinen ClinVar-Bericht öffnen',
+    livePackCardTitle: 'Aktives öffentliches NCBI-ClinVar-Paket',
+    livePackCardBadge: 'HTTP 206 + Merkle-geprüft',
+    livePackRowDataset: 'Referenzdatensatz',
+    livePackRowVariants: 'Indizierte ClinVar-Varianten',
+    livePackRowPathogenic: 'Pathogen / Wahrsch. pathogen',
+    livePackRowIntegrity: 'Kryptografischer Container',
+    livePackIntegrityValue: (chunks) => `${chunks} × 16 KB Zstd-SHA-256-Blöcke`,
+    livePackLoadingValue: 'Header wird geladen…',
+    livePackErrorPrefix: 'Fehler beim Laden des Referenzpakets:',
+    zeroBytesValue: '0 B',
+    trustSectionAria: 'Gemessene Datenschutz- und Referenzkennzahlen',
+    trustZeroEgressLabel: 'Gesendete persönliche Daten',
+    trustZeroEgressSub: 'Air-Gap-isoliert in der Browser-OPFS-Sandbox (RFC-0002)',
+    trustLocalWasmLabel: 'Lokale Browser-Ausführung',
+    trustLocalWasmSub: 'Keine externen Server oder Cloud-Uploads',
+    trustClinvarLabel: 'Echte NCBI-ClinVar-Varianten',
+    trustClinvarSub: (build) => `Offizielles gemeinfreies ${build}-Paket`,
+    trustOpenSourceLabel: 'Open-Source-Lizenz',
+    trustOpenSourceSub: 'Vollständig überprüfbarer Quellcode & offene Daten',
+    stepsSectionEyebrow: 'So funktioniert es',
+    stepsSectionTitle: 'In drei Schritten von der DNA-Rohdatei zum ClinVar-Abgleich',
+    stepBadge: (num) => `SCHRITT ${num}`,
+    step1Title: '23andMe- oder VCF-Datei bereithalten',
+    step1Desc:
+      'Nutzen Sie Ihren .txt-Download von 23andMe / Ancestry oder eine .vcf- / .vcf.gz-Datei. GRCh37 (hg19) und GRCh38 (hg38) werden automatisch erkannt und umgerechnet.',
+    step2Title: 'Isolierte OPFS- & WASM-Analyse im Browser',
+    step2Desc:
+      'Ihre Datei bleibt im geschützten Origin Private File System Ihres Browsers und wird lokal per Rust/WebAssembly ausgewertet – 0 Byte verlassen Ihr Gerät.',
+    step3Title: 'Sofortiger ClinVar- & Pharmakogenetik-Bericht',
+    step3Desc:
+      'Sehen Sie in Millisekunden Übereinstimmungen mit pathogenen ClinVar-Einträgen, Evidenzsternen und Arzneimittelreaktionen.',
+    privacyTitle: 'Strikte Zero-Egress-Datenschutzgarantie',
+    privacyDesc:
+      'Ihre persönlichen Genomdaten verlassen niemals Ihr Gerät (0 B ausgehend). Es werden lediglich öffentliche 16-KB-ClinVar-Blöcke per HTTP 206 geladen; Ihr OPFS-Tresor lässt sich jederzeit mit einem Klick löschen.',
+    nonDiagnosticTitle: 'Hinweis für Forschung und Bildung (keine Diagnose)',
+    nonDiagnosticDesc:
+      'Plasmid ist ein offenes Forschungs- und Informationswerkzeug und kein Medizinprodukt zur klinischen Diagnose. Wenden Sie sich für medizinische Entscheidungen bitte an Fachärztinnen oder Humangenetiker.',
+  },
   workspace: {
     languageSelectAria: 'Sprache der Oberfläche auswählen',
     navSectionLabel: 'Arbeitsbereich',
@@ -62,6 +123,7 @@ export const DE_TRANSLATIONS: Translations = {
     title: 'Plasmid',
     subtitle: 'Dezentrales Genom-Wiki & .plasmid Byte-Range-Streaming',
     tabs: {
+      home: 'Start / Übersicht',
       navigator: 'Genom-Navigator',
       intersection: 'ClinVar-Abgleich',
       viewer: 'Bereichs-Viewer',

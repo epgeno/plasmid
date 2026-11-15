@@ -1,6 +1,67 @@
 import type { Translations } from './types.js'
 
 export const KO_TRANSLATIONS: Translations = {
+  landing: {
+    brandHomeAria: 'Plasmid 홈 화면으로 이동',
+    openWorkspaceBtn: '워크스페이스 바로가기',
+    eyebrowBadge: '개인 데이터 외부 전송 0 B • 100% 브라우저 로컬 분석',
+    heroTitle:
+      '내 23andMe·유전체 파일, 서버 전송 없이 브라우저에서 바로 확인하세요.',
+    heroSubtitle:
+      '회원가입도, 클라우드 업로드도 필요 없습니다. 개인 DNA 파일을 브라우저 안에 안전하게 보관한 채 NCBI ClinVar 질환·약물반응 변이와 몇 초 만에 대조해 보세요.',
+    uploadCardTitle: '내 DNA 파일 로컬 보안 분석',
+    uploadCardHint:
+      '23andMe .txt, Ancestry .txt 또는 .vcf / .vcf.gz 파일을 이 영역에 끌어다 놓거나 아래 버튼을 눌러 선택하세요.',
+    uploadCardActive: '파일을 놓으면 브라우저 OPFS 에어갭 볼트에서 즉시 분석합니다',
+    uploadCardImporting: 'OPFS 격리 저장 및 Rust/WASM 로컬 검증 중…',
+    uploadCtaBtn: '내 DNA 파일 업로드 (.vcf, .vcf.gz, 23andMe .txt)',
+    supportedFormatsLabel: '지원 파일 형식',
+    format23andMe: '23andMe 원본 (.txt)',
+    formatAncestry: 'Ancestry / TSV (.txt)',
+    formatVcf: '유전체 표준 (.vcf / .vcf.gz)',
+    formatAutoLiftover: 'GRCh37 ↔ GRCh38 자동 보정',
+    exploreDemoBtn: (count) => `공공 ClinVar 데모 탐색 (${count}건)`,
+    exploreDemoLoadingBtn: '공공 ClinVar 데모 탐색',
+    activeVaultBanner: (filename) => `로컬 OPFS 볼트에 보관됨: ${filename}`,
+    resumeVaultReportBtn: '내 ClinVar 교차 리포트 열기',
+    livePackCardTitle: '실시간 공공 NCBI ClinVar 참조 팩',
+    livePackCardBadge: 'HTTP 206 + Merkle 검증됨',
+    livePackRowDataset: '참조 데이터셋',
+    livePackRowVariants: '색인된 ClinVar 변이',
+    livePackRowPathogenic: '병원성 / 유사병원성 변이',
+    livePackRowIntegrity: '암호학적 컨테이너 무결성',
+    livePackIntegrityValue: (chunks) => `16 KB Zstd SHA-256 청크 ${chunks}개`,
+    livePackLoadingValue: '헤더 읽는 중…',
+    livePackErrorPrefix: '참조 팩 로드 오류:',
+    zeroBytesValue: '0 B',
+    trustSectionAria: '실측 프라이버시 및 공공 참조 데이터 지표',
+    trustZeroEgressLabel: '개인 데이터 외부 전송',
+    trustZeroEgressSub: '브라우저 OPFS 샌드박스 완전 격리 (RFC-0002)',
+    trustLocalWasmLabel: '브라우저 로컬 실행',
+    trustLocalWasmSub: '외부 분석 서버·클라우드 업로드 없음',
+    trustClinvarLabel: '실제 NCBI ClinVar 변이',
+    trustClinvarSub: (build) => `공식 ${build} 공공 도메인 레퍼런스`,
+    trustOpenSourceLabel: '오픈소스 라이선스',
+    trustOpenSourceSub: '누구나 검증 가능한 투명한 코드와 공공 데이터',
+    stepsSectionEyebrow: '작동 방식',
+    stepsSectionTitle: '복잡한 유전체 용어 없이 3단계로 끝나는 로컬 분석',
+    stepBadge: (num) => `단계 ${num}`,
+    step1Title: '23andMe 또는 VCF 파일 준비',
+    step1Desc:
+      '23andMe·Ancestry에서 내려받은 원본 .txt 파일이나 개인 .vcf / .vcf.gz 파일을 준비합니다. GRCh37(hg19)과 GRCh38(hg38) 좌표를 모두 자동으로 인식·보정합니다.',
+    step2Title: '브라우저 OPFS · WASM 에어갭 분석',
+    step2Desc:
+      '선택한 파일은 내 기기 브라우저의 격리 저장소(OPFS)에만 저장되며, Rust/WebAssembly 엔진이 외부 전송 0바이트 상태로 안전하게 해독합니다.',
+    step3Title: 'ClinVar 질환·약물반응 즉시 대조',
+    step3Desc:
+      '공인 NCBI ClinVar 병원성 변이, 전문가 리뷰 등급(별점), 약물유전체 반응 마커와의 일치 결과를 즉시 리포트로 확인합니다.',
+    privacyTitle: '개인 유전체 0 바이트 유출 보장 (RFC-0002)',
+    privacyDesc:
+      '사용자의 원본 DNA 데이터는 단 1바이트도 외부 서버나 피어 네트워크로 전송되지 않습니다. 오직 공공 ClinVar 16 KB 압축 블록만 HTTP 206으로 조회하며, 저장된 볼트 파일은 언제든 클릭 한 번으로 영구 삭제할 수 있습니다.',
+    nonDiagnosticTitle: '학술·교육 목적 안내 (비진단 도구)',
+    nonDiagnosticDesc:
+      'Plasmid는 공공 과학 데이터를 탐색하기 위한 오픈소스 연구·교육용 도구이며 의학적 진단기기가 아닙니다. 건강 및 치료와 관련된 판단은 반드시 전문 의료진 또는 임상유전학 전문의와 상담하시기 바랍니다.',
+  },
   workspace: {
     languageSelectAria: '인터페이스 언어 선택',
     navSectionLabel: '워크스페이스',
@@ -62,6 +123,7 @@ export const KO_TRANSLATIONS: Translations = {
     title: 'Plasmid',
     subtitle: '분산형 유전체 위키 & .plasmid 정밀 구간 스트리밍',
     tabs: {
+      home: '홈 / 시작하기',
       navigator: '전장 유전체 네비게이터',
       intersection: '임상 교차 리포트',
       viewer: '데이터 뷰어',
@@ -417,6 +479,67 @@ export const KO_TRANSLATIONS: Translations = {
 }
 
 export const JA_TRANSLATIONS: Translations = {
+  landing: {
+    brandHomeAria: 'Plasmid ホームへ戻る',
+    openWorkspaceBtn: 'ワークスペースを開く',
+    eyebrowBadge: '個人データ外部送信 0 B • 100% ブラウザ内ローカル解析',
+    heroTitle:
+      '23andMe や個人の DNA ファイルを、外部送信ゼロでブラウザから NCBI ClinVar と照合。',
+    heroSubtitle:
+      'アカウント登録もクラウドへのアップロードも不要です。お手元の生データファイルを端末内に保ったまま、疾患関連変異や薬物応答マーカーを数秒で確認できます。',
+    uploadCardTitle: '個人 DNA のローカル保護スクリーニング',
+    uploadCardHint:
+      '23andMe .txt・Ancestry .txt・.vcf / .vcf.gz ファイルをここにドラッグ＆ドロップするか、下のボタンから選択してください。',
+    uploadCardActive: 'ドロップしてブラウザ内 OPFS エアギャップ保管庫で解析を開始',
+    uploadCardImporting: 'OPFS 隔離保存および Rust/WASM ローカル検証中…',
+    uploadCtaBtn: '自分の DNA ファイルを読み込む (.vcf, .vcf.gz, 23andMe .txt)',
+    supportedFormatsLabel: '対応フォーマット',
+    format23andMe: '23andMe 生データ (.txt)',
+    formatAncestry: 'Ancestry / TSV (.txt)',
+    formatVcf: '標準ゲノム (.vcf / .vcf.gz)',
+    formatAutoLiftover: 'GRCh37 ↔ GRCh38 自動変換',
+    exploreDemoBtn: (count) => `公共 ClinVar デモを探索 (${count} 件)`,
+    exploreDemoLoadingBtn: '公共 ClinVar デモを探索',
+    activeVaultBanner: (filename) => `OPFS ローカル保管庫に保存済み: ${filename}`,
+    resumeVaultReportBtn: '自分の ClinVar 照合レポートを開く',
+    livePackCardTitle: '稼働中の公共 NCBI ClinVar 参照パック',
+    livePackCardBadge: 'HTTP 206 + Merkle 検証済み',
+    livePackRowDataset: '参照データセット',
+    livePackRowVariants: '索引済み ClinVar 変異数',
+    livePackRowPathogenic: '病原性 / 準病原性変異',
+    livePackRowIntegrity: '暗号学的コンテナ検証',
+    livePackIntegrityValue: (chunks) => `16 KB Zstd SHA-256 チャンク × ${chunks}`,
+    livePackLoadingValue: 'ヘッダー読込中…',
+    livePackErrorPrefix: '参照パック読込エラー:',
+    zeroBytesValue: '0 B',
+    trustSectionAria: '実測プライバシーおよび公共参照データ指標',
+    trustZeroEgressLabel: '個人データの外部送信',
+    trustZeroEgressSub: 'ブラウザ OPFS サンドボックス内に完全隔離 (RFC-0002)',
+    trustLocalWasmLabel: 'ブラウザ内ローカル実行',
+    trustLocalWasmSub: '外部解析サーバー・クラウド送信なし',
+    trustClinvarLabel: '実 NCBI ClinVar 収録変異',
+    trustClinvarSub: (build) => `公式 ${build} パブリックドメイン参照パック`,
+    trustOpenSourceLabel: 'オープンソースライセンス',
+    trustOpenSourceSub: '検証可能な公開コードと公共学術データ',
+    stepsSectionEyebrow: '使い方・仕組み',
+    stepsSectionTitle: '専門知識がなくても迷わない 3 ステップのローカル解析',
+    stepBadge: (num) => `ステップ ${num}`,
+    step1Title: '23andMe または VCF ファイルを準備',
+    step1Desc:
+      '23andMe・Ancestry からダウンロードした .txt ファイル、または .vcf / .vcf.gz ファイルを用意します。GRCh37 (hg19) と GRCh38 (hg38) の両方に自動対応します。',
+    step2Title: 'OPFS と WASM によるエアギャップ解析',
+    step2Desc:
+      'ファイルはお使いのブラウザ内の隔離領域（OPFS）にのみ保存され、Rust/WebAssembly が 1 バイトも外部送信せずに高速解析します。',
+    step3Title: 'ClinVar 疾患・薬物応答を即座に照合',
+    step3Desc:
+      'NCBI ClinVar の病原性分類、レビュースター、薬理遺伝学マーカーとの一致結果をその場でレポート表示します。',
+    privacyTitle: '個人ゲノム外部送信 0 B の厳格な保護',
+    privacyDesc:
+      '個人の DNA データはサーバーや P2P ネットワークへ一切送信されません（送信 0 B）。公共 ClinVar の 16 KB 圧縮チャンクのみを HTTP 206 で取得し、保管庫のデータはいつでもワンクリックで消去できます。',
+    nonDiagnosticTitle: '学術・教育目的のご案内（非診断ツール）',
+    nonDiagnosticDesc:
+      'Plasmid はオープンな科学研究・教育用ビューアであり、医療診断機器ではありません。健康や治療に関する判断は必ず医師または臨床遺伝専門医にご相談ください。',
+  },
   workspace: {
     languageSelectAria: '表示言語を選択',
     navSectionLabel: 'ワークスペース',
@@ -478,6 +601,7 @@ export const JA_TRANSLATIONS: Translations = {
     title: 'Plasmid',
     subtitle: '分散型ゲノムWiki＆.plasmid バイト範囲ストリーミング',
     tabs: {
+      home: 'ホーム / はじめる',
       navigator: '全ゲノムナビゲーター',
       intersection: 'ClinVar 照合レポート',
       viewer: 'データビューア',
@@ -834,6 +958,67 @@ export const JA_TRANSLATIONS: Translations = {
 }
 
 export const ZH_TRANSLATIONS: Translations = {
+  landing: {
+    brandHomeAria: '返回 Plasmid 首页',
+    openWorkspaceBtn: '进入专业工作区',
+    eyebrowBadge: '个人数据外发 0 B • 100% 浏览器本地分析',
+    heroTitle:
+      '无需上传服务器，在浏览器本地私密比对您的 23andMe 或 DNA 文件与 NCBI ClinVar。',
+    heroSubtitle:
+      '无需注册账号，无需云端上传，您的个人基因数据 0 字节离开设备。拖入原始 DNA 文件，几秒内即可筛查临床致病位点与药物反应标记。',
+    uploadCardTitle: '个人 DNA 本地私密筛查',
+    uploadCardHint:
+      '将 23andMe .txt、Ancestry .txt 或 .vcf / .vcf.gz 文件拖放到此处，或点击下方按钮从本地设备选择。',
+    uploadCardActive: '松开鼠标，立即在浏览器 OPFS 空气隔离保险库中本地解析',
+    uploadCardImporting: '正在保存至 OPFS 并通过 Rust/WASM 本地校验…',
+    uploadCtaBtn: '上传我的 DNA 文件 (.vcf, .vcf.gz, 23andMe .txt)',
+    supportedFormatsLabel: '支持的文件格式',
+    format23andMe: '23andMe 原始数据 (.txt)',
+    formatAncestry: 'Ancestry / TSV (.txt)',
+    formatVcf: '临床标准 (.vcf / .vcf.gz)',
+    formatAutoLiftover: 'GRCh37 ↔ GRCh38 自动转换',
+    exploreDemoBtn: (count) => `探索公共 ClinVar 演示 (${count} 个变异)`,
+    exploreDemoLoadingBtn: '探索公共 ClinVar 演示',
+    activeVaultBanner: (filename) => `已保存在本地 OPFS 保险库：${filename}`,
+    resumeVaultReportBtn: '打开我的 ClinVar 匹配报告',
+    livePackCardTitle: '实时公共 NCBI ClinVar 参考包',
+    livePackCardBadge: 'HTTP 206 + Merkle 已校验',
+    livePackRowDataset: '参考数据集',
+    livePackRowVariants: '已索引 ClinVar 变异',
+    livePackRowPathogenic: '致病 / 可能致病位点',
+    livePackRowIntegrity: '密码学容器完整性',
+    livePackIntegrityValue: (chunks) => `${chunks} 个 16 KB Zstd SHA-256 分块`,
+    livePackLoadingValue: '正在读取文件头…',
+    livePackErrorPrefix: '参考包加载失败：',
+    zeroBytesValue: '0 B',
+    trustSectionAria: '实测隐私保护与公共参考数据指标',
+    trustZeroEgressLabel: '个人数据外发量',
+    trustZeroEgressSub: '严格隔离于浏览器 OPFS 沙箱内 (RFC-0002)',
+    trustLocalWasmLabel: '浏览器本地执行',
+    trustLocalWasmSub: '零云端上传、零外部服务器计算',
+    trustClinvarLabel: '真实 NCBI ClinVar 变异',
+    trustClinvarSub: (build) => `官方 ${build} 公共领域参考包`,
+    trustOpenSourceLabel: '开源软件许可',
+    trustOpenSourceSub: '代码完全透明可审计，仅用公开科学数据',
+    stepsSectionEyebrow: '工作原理',
+    stepsSectionTitle: '无需生信背景，三步完成本地基因临床比对',
+    stepBadge: (num) => `第 ${num} 步`,
+    step1Title: '准备 23andMe 或 VCF 基因文件',
+    step1Desc:
+      '支持从 23andMe、Ancestry 导出的原始 .txt 文件或个人 .vcf / .vcf.gz 文件，自动识别并转换 GRCh37 (hg19) 与 GRCh38 (hg38) 坐标。',
+    step2Title: '浏览器 OPFS 与 WASM 空气隔离解析',
+    step2Desc:
+      '您的文件仅保存在浏览器私有文件系统（OPFS）中，由本地 Rust/WebAssembly 引擎直接读取解析，绝不向网络发送任何个人字节。',
+    step3Title: '即时生成 ClinVar 疾病与用药反应报告',
+    step3Desc:
+      '毫秒级比对 NCBI ClinVar 致病分类、专家评审星级及药物基因组学反应位点，即刻查看清晰报告。',
+    privacyTitle: '严格的零外发隐私承诺 (RFC-0002)',
+    privacyDesc:
+      '您的个人基因组数据绝不会离开当前设备（0 B 外发）。应用仅通过 HTTP 206 按需读取 16 KB 公共 ClinVar 压缩分块，且您可随时一键清空本地 OPFS 保险库。',
+    nonDiagnosticTitle: '科研与科普用途声明（非医疗诊断）',
+    nonDiagnosticDesc:
+      'Plasmid 是面向科学研究与教育的开源基因组查看工具，不构成临床医疗诊断或治疗建议。涉及健康决策请务必咨询执业医师或临床遗传咨询师。',
+  },
   workspace: {
     languageSelectAria: '选择界面语言',
     navSectionLabel: '工作区',
@@ -895,6 +1080,7 @@ export const ZH_TRANSLATIONS: Translations = {
     title: 'Plasmid',
     subtitle: '去中心化基因组百科与 .plasmid 字节范围流引擎',
     tabs: {
+      home: '首页 / 开始使用',
       navigator: '全基因组导航',
       intersection: 'ClinVar 匹配报告',
       viewer: '数据查看器',

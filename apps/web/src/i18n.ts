@@ -6,6 +6,7 @@ import { PT_TRANSLATIONS } from './locales/pt.js'
 import { KO_TRANSLATIONS, JA_TRANSLATIONS, ZH_TRANSLATIONS } from './locales/ko_ja_zh.js'
 import type {
   ClinicalSignificanceTranslations,
+  LandingTranslations,
   LanguageOption,
   NavigatorAuditTranslations,
   NavigatorTranslations,
@@ -18,6 +19,7 @@ import type {
 
 export type {
   ClinicalSignificanceTranslations,
+  LandingTranslations,
   LanguageOption,
   NavigatorAuditTranslations,
   NavigatorTranslations,
@@ -173,22 +175,15 @@ export function syncDocumentLanguage(lang: SupportedLanguage): void {
   document.title = `${t.header.title} — ${t.header.subtitle}`
 }
 
-export function localizeClinicalSignificance(
-  rawSig: string | null | undefined,
-  lang: SupportedLanguage
-): string {
-  if (!rawSig) return ''
-  const sig = TRANSLATIONS[lang].clinicalSig
-  const normalized = rawSig.trim().toLowerCase().replace(/\s+/g, '_')
-
-  switch (normalized) {
+function mapSingleClinicalSigToken(
+  token: string,
+  sig: ClinicalSignificanceTranslations
+): string | null {
+  switch (token) {
     case 'pathogenic':
       return sig.pathogenic
     case 'likely_pathogenic':
       return sig.likelyPathogenic
-    case 'pathogenic/likely_pathogenic':
-    case 'pathogenic,_likely_pathogenic':
-      return sig.pathogenicLikelyPathogenic
     case 'oncogenic':
       return sig.oncogenic
     case 'likely_oncogenic':
@@ -201,13 +196,11 @@ export function localizeClinicalSignificance(
       return sig.benign
     case 'likely_benign':
       return sig.likelyBenign
-    case 'benign/likely_benign':
-    case 'benign,_likely_benign':
-      return sig.benignLikelyBenign
     case 'uncertain_significance':
       return sig.uncertainSignificance
     case 'conflicting_classifications_of_pathogenicity':
     case 'conflicting_interpretations_of_pathogenicity':
+    case 'conflicting_classifications_of_oncogenicity':
       return sig.conflicting
     case 'affects':
       return sig.affects
@@ -218,26 +211,85 @@ export function localizeClinicalSignificance(
     case 'not_provided':
       return sig.notProvided
     default:
-      if (normalized.includes('pathogenic') && normalized.includes('drug_response')) {
-        return `${sig.pathogenic} · ${sig.drugResponse}`
-      }
-      if (normalized.includes('likely_pathogenic') && normalized.includes('pathogenic')) {
-        return sig.pathogenicLikelyPathogenic
-      }
-      if (normalized.includes('likely_pathogenic')) {
-        return sig.likelyPathogenic
-      }
-      if (normalized.includes('pathogenic')) {
-        return sig.pathogenic
-      }
-      if (normalized.includes('drug_response')) {
-        return sig.drugResponse
-      }
-      if (normalized.includes('risk_factor')) {
-        return sig.riskFactor
-      }
-      return rawSig.replace(/_/g, ' ')
+      return null
   }
+}
+
+export function localizeClinicalSignificance(
+  rawSig: string | null | undefined,
+  lang: SupportedLanguage
+): string {
+  if (!rawSig) return ''
+  const sig = TRANSLATIONS[lang].clinicalSig
+  const normalized = rawSig.trim().toLowerCase().replace(/\s+/g, '_')
+
+  if (
+    normalized === 'pathogenic/likely_pathogenic' ||
+    normalized === 'pathogenic,_likely_pathogenic'
+  ) {
+    return sig.pathogenicLikelyPathogenic
+  }
+  if (
+    normalized === 'benign/likely_benign' ||
+    normalized === 'benign,_likely_benign'
+  ) {
+    return sig.benignLikelyBenign
+  }
+
+  const exactSingle = mapSingleClinicalSigToken(normalized, sig)
+  if (exactSingle) {
+    return exactSingle
+  }
+
+  const rawTokens = normalized
+    .split(/[|/]+|,_|,/)
+    .map((t) => t.replace(/^_+|_+$/g, ''))
+    .filter(Boolean)
+
+  const informative = rawTokens.filter((t) => t !== 'other' && t !== 'not_provided')
+  const effectiveTokens = informative.length > 0 ? informative : rawTokens
+
+  const hasBothPathogenic =
+    effectiveTokens.includes('pathogenic') &&
+    effectiveTokens.includes('likely_pathogenic')
+  const hasBothBenign =
+    effectiveTokens.includes('benign') && effectiveTokens.includes('likely_benign')
+
+  const mapped: string[] = []
+  let emittedPathPair = false
+  let emittedBenignPair = false
+
+  for (const tok of effectiveTokens) {
+    if (hasBothPathogenic && (tok === 'pathogenic' || tok === 'likely_pathogenic')) {
+      if (!emittedPathPair) {
+        mapped.push(sig.pathogenicLikelyPathogenic)
+        emittedPathPair = true
+      }
+      continue
+    }
+    if (hasBothBenign && (tok === 'benign' || tok === 'likely_benign')) {
+      if (!emittedBenignPair) {
+        mapped.push(sig.benignLikelyBenign)
+        emittedBenignPair = true
+      }
+      continue
+    }
+    if (tok === 'other' && informative.length === 0) {
+      mapped.push(sig.notProvided)
+      continue
+    }
+    const label = mapSingleClinicalSigToken(tok, sig)
+    if (label) {
+      mapped.push(label)
+    }
+  }
+
+  const deduped = Array.from(new Set(mapped))
+  if (deduped.length > 0) {
+    return deduped.join(' · ')
+  }
+
+  return rawSig.replace(/_/g, ' ')
 }
 
 export function formatVaultErrorMessage(raw: string, lang: SupportedLanguage): string {
