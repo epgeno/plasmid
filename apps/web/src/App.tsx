@@ -11,6 +11,7 @@ import {
   Cpu,
   ExternalLink,
   FileText,
+  Globe,
   HardDrive,
   Layers,
   Lock,
@@ -24,7 +25,17 @@ import {
   Upload,
   X,
 } from 'lucide-react'
-import { SupportedLanguage, TRANSLATIONS } from './i18n'
+import {
+  detectInitialLanguage,
+  formatVaultErrorMessage,
+  isSupportedLanguage,
+  localizeClinicalSignificance,
+  persistLanguageChoice,
+  SUPPORTED_LANGUAGES,
+  SupportedLanguage,
+  syncDocumentLanguage,
+  TRANSLATIONS,
+} from './i18n'
 import { ClinicalSummaryBento } from './components/ClinicalSummaryBento'
 import { ClinVarIntersectionPanel } from './components/ClinVarIntersectionPanel'
 import { GenomeNavigator } from './components/GenomeNavigator'
@@ -109,88 +120,21 @@ function parseCoordinateQuery(raw: string): ParsedCoordinateQuery | null {
   }
 }
 
-function formatVaultErrorMessage(raw: string, lang: SupportedLanguage): string {
-  const cleaned = raw
-    .replace(/^Local \.plasmid parse error:\s*/i, '')
-    .replace(/^VCF dataset parse error:\s*/i, '')
-    .replace(/^VCF parsing error:\s*/i, '')
-    .replace(/^Serialization error:\s*/i, '')
-    .trim()
-
-  if (lang === 'en') {
-    return cleaned
-  }
-
-  const extMatch = /^Unsupported file extension for "([^"]+)"/i.exec(cleaned)
-  if (extMatch) {
-    const name = extMatch[1]
-    if (lang === 'ko') {
-      return `지원하지 않는 파일 형식("${name}")입니다. 지원 형식: .vcf, .vcf.gz, .plasmid, .txt, .txt.gz`
-    }
-    if (lang === 'zh') {
-      return `不支持的文件格式（"${name}"）。支持格式：.vcf, .vcf.gz, .plasmid, .txt, .txt.gz`
-    }
-    return `未対応のファイル形式（"${name}"）です。対応形式: .vcf, .vcf.gz, .plasmid, .txt, .txt.gz`
-  }
-
-  if (
-    /Selected genomic file is empty|buffer is empty|Decompressed \.vcf\.gz stream is empty|only null bytes/i.test(
-      cleaned
-    )
-  ) {
-    if (lang === 'ko') return '선택한 유전체 파일이 비어 있습니다.'
-    if (lang === 'zh') return '所选基因组文件为空。'
-    return '選択されたゲノムファイルが空です。'
-  }
-
-  if (/Invalid \.vcf\.gz stream/i.test(cleaned)) {
-    if (lang === 'ko') return '손상되었거나 유효하지 않은 .vcf.gz 압축 스트림입니다.'
-    if (lang === 'zh') return '.vcf.gz 压缩数据流损坏或无效。'
-    return '破損または無効な .vcf.gz 圧縮ストリームです。'
-  }
-
-  if (/Invalid UTF-8/i.test(cleaned)) {
-    if (lang === 'ko') return '유전체 텍스트 파일의 UTF-8 인코딩이 올바르지 않습니다.'
-    if (lang === 'zh') return '基因组文本文件的 UTF-8 编码无效。'
-    return 'ゲノムテキストファイルの UTF-8 エンコーディングが無効です。'
-  }
-
-  if (/Merkle root integrity check failed/i.test(cleaned)) {
-    if (lang === 'ko') return '.plasmid 컨테이너의 SHA-256 머클 루트 무결성 검증에 실패했습니다.'
-    if (lang === 'zh') return '.plasmid 容器的 SHA-256 默克尔根完整性校验失败。'
-    return '.plasmid コンテナの SHA-256 マークルルート整合性検証に失敗しました。'
-  }
-
-  if (/shorter than 128-byte \.plasmid header|magic|Invalid \.plasmid/i.test(cleaned)) {
-    if (lang === 'ko') return '유효한 .plasmid 바이너리 컨테이너 헤더가 아닙니다.'
-    if (lang === 'zh') return '不是有效的 .plasmid 二进制容器文件头。'
-    return '有効な .plasmid バイナリコンテナヘッダーではありません。'
-  }
-
-  if (
-    /Input contains no valid VCF header or variant records|Expected at least 8 tab-delimited columns|No valid variant records found|Invalid coordinate/i.test(
-      cleaned
-    )
-  ) {
-    if (lang === 'ko') return '유효한 VCF 헤더 또는 유전체 변이 레코드를 찾을 수 없습니다.'
-    if (lang === 'zh') return '未找到有效的 VCF 表头或基因组变异记录。'
-    return '有効な VCF ヘッダーまたはゲノム変異レコードが見つかりません。'
-  }
-
-  if (lang === 'ko') return '유전체 파일 형식을 해석할 수 없습니다.'
-  if (lang === 'zh') return '无法解析该基因组文件格式。'
-  return 'ゲノムファイル形式を解析できませんでした。'
-}
-
 export default function App() {
   const initialVaultPath = opfs.getActiveVaultPath()
-  const [lang, setLang] = useState<SupportedLanguage>('ko')
+  const [lang, setLang] = useState<SupportedLanguage>(() => detectInitialLanguage())
   const [activeTab, setActiveTab] = useState<WorkspaceTabId>('navigator')
   const [railCollapsed, setRailCollapsed] = useState<boolean>(false)
   const [isCompactViewport, setIsCompactViewport] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < 1200 : false
   )
   const [mobileVaultExpanded, setMobileVaultExpanded] = useState<boolean>(false)
+
+  const handleLanguageChange = useCallback((rawValue: string) => {
+    if (!isSupportedLanguage(rawValue)) return
+    setLang(rawValue)
+    persistLanguageChoice(rawValue)
+  }, [])
 
   const [globalSearch, setGlobalSearch] = useState<string>('')
   const [searchFocused, setSearchFocused] = useState<boolean>(false)
@@ -261,10 +205,14 @@ export default function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const mq = window.matchMedia('(max-width: 1199px)')
-    const sync = () => setIsCompactViewport(mq.matches)
+    const sync = () => setIsCompactViewport(window.innerWidth < 1200 || mq.matches)
     sync()
     mq.addEventListener('change', sync)
-    return () => mq.removeEventListener('change', sync)
+    window.addEventListener('resize', sync)
+    return () => {
+      mq.removeEventListener('change', sync)
+      window.removeEventListener('resize', sync)
+    }
   }, [])
 
   // Plausible-style '/' keyboard shortcut to focus global locus/gene search
@@ -354,11 +302,9 @@ export default function App() {
     []
   )
 
-  // Synchronize <html lang="..."> with active UI language
+  // Synchronize <html lang="..."> and document.title with active UI language
   useEffect(() => {
-    if (typeof document !== 'undefined') {
-      document.documentElement.lang = lang
-    }
+    syncDocumentLanguage(lang)
   }, [lang])
 
   // Load saved OPFS vault inventory and active dataset on mount
@@ -653,6 +599,7 @@ export default function App() {
           String(m.pos),
           `${m.chrom}:${m.pos}`,
           m.clinical_significance,
+          localizeClinicalSignificance(m.clinical_significance, lang),
           ...m.conditions,
         ]
           .join(' ')
@@ -660,7 +607,7 @@ export default function App() {
         return hay.includes(q)
       })
       .slice(0, 5)
-  }, [globalSearch, intersectionReport])
+  }, [globalSearch, intersectionReport, lang])
 
   const searchCatalogHits = useMemo<CatalogVariantItem[]>(() => {
     const q = globalSearch.trim().toLowerCase()
@@ -675,13 +622,14 @@ export default function App() {
           String(v.pos),
           `${v.chrom}:${v.pos}`,
           v.clinvar ?? '',
+          localizeClinicalSignificance(v.clinvar, lang),
         ]
           .join(' ')
           .toLowerCase()
         return hay.includes(q)
       })
       .slice(0, 6)
-  }, [globalSearch, catalogItems])
+  }, [globalSearch, catalogItems, lang])
 
   const handleSelectCoordSearch = (coord: ParsedCoordinateQuery) => {
     setActiveTab('navigator')
@@ -775,416 +723,478 @@ export default function App() {
           1. LEFT NAVIGATION RAIL (Desktop >=1200px) & COMPACT MOBILE GNB (<1200px)
          =================================================================== */}
       <aside className="plasmid-left-rail">
-        {/* Desktop Collapsible Rail */}
-        <div
-          className="plasmid-desktop-only"
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between',
-            height: '100%',
-            gap: '16px',
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            {/* Brand + Collapse Toggle */}
+        {!isCompactViewport ? (
+          /* Desktop Collapsible Rail */
+          <div
+            className="plasmid-desktop-only"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              height: '100%',
+              gap: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {/* Brand + Collapse Toggle */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: railCollapsed ? 'center' : 'space-between',
+                  gap: '8px',
+                }}
+              >
+                {!railCollapsed && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                    <div
+                      style={{
+                        width: '30px',
+                        height: '30px',
+                        backgroundColor: '#0f172a',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Cpu size={17} color="#ffffff" />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span
+                          style={{
+                            fontSize: '16px',
+                            fontWeight: 800,
+                            letterSpacing: '-0.02em',
+                            color: '#0f172a',
+                          }}
+                        >
+                          {t.header.title}
+                        </span>
+                        <span
+                          className="tabular-nums"
+                          style={{
+                            fontSize: '10px',
+                            padding: '1px 5px',
+                            backgroundColor: '#e2e8f0',
+                            color: '#334155',
+                            borderRadius: '4px',
+                            fontWeight: 700,
+                          }}
+                        >
+                          v0.1.0
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  data-testid="rail-collapse-btn"
+                  aria-label={railCollapsed ? wt.expandRail : wt.collapseRail}
+                  title={railCollapsed ? wt.expandRail : wt.collapseRail}
+                  onClick={() => setRailCollapsed((prev) => !prev)}
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '6px',
+                    border: '1px solid #e2e8f0',
+                    backgroundColor: '#ffffff',
+                    color: '#475569',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                >
+                  {railCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+                </button>
+              </div>
+
+              {!railCollapsed && (
+                <p
+                  style={{
+                    margin: '-8px 0 0 0',
+                    fontSize: '11px',
+                    color: '#64748b',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  {t.header.subtitle}
+                </p>
+              )}
+
+              {/* Vertical 7-Tab Navigation */}
+              <nav
+                aria-label={wt.navSectionLabel}
+                style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
+              >
+                {!railCollapsed && (
+                  <span
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      color: '#64748b',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      padding: '0 8px 4px 8px',
+                    }}
+                  >
+                    {wt.navSectionLabel}
+                  </span>
+                )}
+
+                {tabs.map((tab) => {
+                  const Icon = tab.icon
+                  const active = activeTab === tab.id
+                  const matchBadge =
+                    tab.id === 'intersection' &&
+                    sourceMode === 'vault' &&
+                    intersectionReport
+                      ? intersectionReport.matched_count
+                      : tab.id === 'swarm' && swarmSnapshot.joined
+                        ? swarmSnapshot.peers.filter((p) => p.status === 'connected').length
+                        : null
+
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      data-testid={`nav-tab-${tab.id}`}
+                      onClick={() => setActiveTab(tab.id)}
+                      title={railCollapsed ? tab.label : undefined}
+                      aria-label={tab.label}
+                      aria-current={active ? 'page' : undefined}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: railCollapsed ? 'center' : 'space-between',
+                        gap: '8px',
+                        width: '100%',
+                        padding: railCollapsed ? '9px 0' : '8px 10px',
+                        fontSize: '13px',
+                        fontWeight: active ? 700 : 500,
+                        backgroundColor: active ? '#ffffff' : 'transparent',
+                        color: active ? '#0f172a' : '#475569',
+                        border: active ? '1px solid #e2e8f0' : '1px solid transparent',
+                        borderRadius: '8px',
+                        boxShadow: active ? '0 1px 2px rgba(15, 23, 42, 0.05)' : 'none',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        minWidth: 0,
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '9px',
+                          minWidth: 0,
+                        }}
+                      >
+                        <Icon
+                          size={16}
+                          color={active ? '#2563eb' : '#64748b'}
+                          style={{ flexShrink: 0 }}
+                        />
+                        {!railCollapsed && (
+                          <span
+                            style={{
+                              lineHeight: 1.3,
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {tab.label}
+                          </span>
+                        )}
+                      </span>
+
+                      {!railCollapsed && matchBadge !== null && (
+                        <span
+                          className="tabular-nums"
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            padding: '1px 6px',
+                            borderRadius: '9999px',
+                            backgroundColor: '#f0fdf4',
+                            color: '#166534',
+                            border: '1px solid #bbf7d0',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {matchBadge}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </nav>
+            </div>
+
+            {/* Bottom Language Selector & Repo Links */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0 }}>
+              <div
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  width: '100%',
+                  minWidth: 0,
+                }}
+              >
+                {!railCollapsed && (
+                  <Globe
+                    size={14}
+                    color="#475569"
+                    style={{
+                      position: 'absolute',
+                      left: '10px',
+                      pointerEvents: 'none',
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+                <select
+                  data-testid="language-select"
+                  aria-label={wt.languageSelectAria}
+                  title={wt.languageSelectAria}
+                  value={lang}
+                  onChange={(e) => handleLanguageChange(e.target.value)}
+                  style={{
+                    width: '100%',
+                    minWidth: 0,
+                    appearance: 'none',
+                    WebkitAppearance: 'none',
+                    padding: railCollapsed ? '6px 4px' : '7px 28px 7px 30px',
+                    fontSize: railCollapsed ? '11px' : '12px',
+                    fontWeight: 600,
+                    textAlign: railCollapsed ? 'center' : 'left',
+                    backgroundColor: '#ffffff',
+                    color: '#0f172a',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '8px',
+                    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+                    cursor: 'pointer',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {SUPPORTED_LANGUAGES.map((opt) => (
+                    <option key={opt.code} value={opt.code}>
+                      {railCollapsed ? opt.code.toUpperCase() : opt.label}
+                    </option>
+                  ))}
+                </select>
+                {!railCollapsed && (
+                  <ChevronDown
+                    size={14}
+                    color="#64748b"
+                    style={{
+                      position: 'absolute',
+                      right: '9px',
+                      pointerEvents: 'none',
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+              </div>
+
+              {!railCollapsed && (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '11px',
+                    color: '#64748b',
+                    padding: '0 4px',
+                  }}
+                >
+                  <a
+                    href="https://github.com/epgeno/plasmid"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#64748b', fontWeight: 500 }}
+                  >
+                    GitHub
+                  </a>
+                  <span>MIT / Apache-2.0</span>
+                  <a
+                    href="https://plasmid.wiki"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#64748b', fontWeight: 500 }}
+                  >
+                    plasmid.wiki
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* Mobile / Tablet Compact Header + Scrollable 7-Tab Strip (<1200px) */
+          <div className="plasmid-mobile-only">
             <div
               style={{
                 display: 'flex',
+                justifyContent: 'space-between',
                 alignItems: 'center',
-                justifyContent: railCollapsed ? 'center' : 'space-between',
                 gap: '8px',
+                paddingBottom: '6px',
+                minWidth: 0,
               }}
             >
-              {!railCollapsed && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-                  <div
-                    style={{
-                      width: '30px',
-                      height: '30px',
-                      backgroundColor: '#0f172a',
-                      borderRadius: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Cpu size={17} color="#ffffff" />
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span
-                        style={{
-                          fontSize: '16px',
-                          fontWeight: 800,
-                          letterSpacing: '-0.02em',
-                          color: '#0f172a',
-                        }}
-                      >
-                        {t.header.title}
-                      </span>
-                      <span
-                        className="tabular-nums"
-                        style={{
-                          fontSize: '10px',
-                          padding: '1px 5px',
-                          backgroundColor: '#e2e8f0',
-                          color: '#334155',
-                          borderRadius: '4px',
-                          fontWeight: 700,
-                        }}
-                      >
-                        v0.1.0
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <button
-                type="button"
-                data-testid="rail-collapse-btn"
-                aria-label={railCollapsed ? wt.expandRail : wt.collapseRail}
-                title={railCollapsed ? wt.expandRail : wt.collapseRail}
-                onClick={() => setRailCollapsed((prev) => !prev)}
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '6px',
-                  border: '1px solid #e2e8f0',
-                  backgroundColor: '#ffffff',
-                  color: '#475569',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  flexShrink: 0,
-                }}
-              >
-                {railCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
-              </button>
-            </div>
-
-            {!railCollapsed && (
-              <p
-                style={{
-                  margin: '-8px 0 0 0',
-                  fontSize: '11px',
-                  color: '#64748b',
-                  lineHeight: 1.45,
-                }}
-              >
-                {t.header.subtitle}
-              </p>
-            )}
-
-            {/* Vertical 7-Tab Navigation */}
-            <nav
-              aria-label={wt.navSectionLabel}
-              style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
-            >
-              {!railCollapsed && (
-                <span
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <div
                   style={{
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    color: '#64748b',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                    padding: '0 8px 4px 8px',
+                    width: '26px',
+                    height: '26px',
+                    backgroundColor: '#0f172a',
+                    borderRadius: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
                   }}
                 >
-                  {wt.navSectionLabel}
+                  <Cpu size={15} color="#ffffff" />
+                </div>
+                <span
+                  style={{
+                    fontSize: '15px',
+                    fontWeight: 800,
+                    color: '#0f172a',
+                    letterSpacing: '-0.02em',
+                  }}
+                >
+                  {t.header.title}
                 </span>
-              )}
+                <span
+                  className="tabular-nums"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: '9999px',
+                    backgroundColor: '#f0fdf4',
+                    color: '#166534',
+                    border: '1px solid #bbf7d0',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <ShieldCheck size={11} />
+                  <span>0 B</span>
+                </span>
+              </div>
 
+              <div
+                style={{
+                  position: 'relative',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  minWidth: 0,
+                  maxWidth: '176px',
+                  flex: '0 1 auto',
+                }}
+              >
+                <Globe
+                  size={13}
+                  color="#475569"
+                  style={{
+                    position: 'absolute',
+                    left: '8px',
+                    pointerEvents: 'none',
+                    flexShrink: 0,
+                  }}
+                />
+                <select
+                  data-testid="language-select"
+                  aria-label={wt.languageSelectAria}
+                  value={lang}
+                  onChange={(e) => handleLanguageChange(e.target.value)}
+                  style={{
+                    width: '100%',
+                    minWidth: 0,
+                    appearance: 'none',
+                    WebkitAppearance: 'none',
+                    padding: '5px 24px 5px 25px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    backgroundColor: '#f8fafc',
+                    color: '#0f172a',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '7px',
+                    cursor: 'pointer',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {SUPPORTED_LANGUAGES.map((opt) => (
+                    <option key={opt.code} value={opt.code}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown
+                  size={13}
+                  color="#64748b"
+                  style={{
+                    position: 'absolute',
+                    right: '7px',
+                    pointerEvents: 'none',
+                    flexShrink: 0,
+                  }}
+                />
+              </div>
+            </div>
+
+            <nav
+              aria-label={wt.navSectionLabel}
+              className="plasmid-scroll-strip"
+              style={{ gap: '4px', paddingBottom: '8px' }}
+            >
               {tabs.map((tab) => {
                 const Icon = tab.icon
                 const active = activeTab === tab.id
-                const matchBadge =
-                  tab.id === 'intersection' &&
-                  sourceMode === 'vault' &&
-                  intersectionReport
-                    ? intersectionReport.matched_count
-                    : tab.id === 'swarm' && swarmSnapshot.joined
-                      ? swarmSnapshot.peers.filter((p) => p.status === 'connected').length
-                      : null
-
                 return (
                   <button
                     key={tab.id}
                     type="button"
-                    data-testid={`nav-tab-${tab.id}`}
+                    data-testid={`mobile-nav-tab-${tab.id}`}
                     onClick={() => setActiveTab(tab.id)}
-                    title={railCollapsed ? tab.label : undefined}
-                    aria-label={tab.label}
                     aria-current={active ? 'page' : undefined}
                     style={{
-                      display: 'flex',
+                      display: 'inline-flex',
                       alignItems: 'center',
-                      justifyContent: railCollapsed ? 'center' : 'space-between',
-                      gap: '8px',
-                      width: '100%',
-                      padding: railCollapsed ? '9px 0' : '8px 10px',
-                      fontSize: '13px',
-                      fontWeight: active ? 700 : 500,
-                      backgroundColor: active ? '#ffffff' : 'transparent',
-                      color: active ? '#0f172a' : '#475569',
-                      border: active ? '1px solid #e2e8f0' : '1px solid transparent',
-                      borderRadius: '8px',
-                      boxShadow: active ? '0 1px 2px rgba(15, 23, 42, 0.05)' : 'none',
+                      gap: '5px',
+                      padding: '5px 10px',
+                      fontSize: '12px',
+                      fontWeight: active ? 700 : 600,
+                      backgroundColor: active ? '#0f172a' : '#f8fafc',
+                      color: active ? '#ffffff' : '#475569',
+                      border: active ? '1px solid #0f172a' : '1px solid #e2e8f0',
+                      borderRadius: '9999px',
                       cursor: 'pointer',
-                      textAlign: 'left',
-                      minWidth: 0,
+                      flexShrink: 0,
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '9px',
-                        minWidth: 0,
-                      }}
-                    >
-                      <Icon
-                        size={16}
-                        color={active ? '#2563eb' : '#64748b'}
-                        style={{ flexShrink: 0 }}
-                      />
-                      {!railCollapsed && (
-                        <span
-                          style={{
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {tab.label}
-                        </span>
-                      )}
-                    </span>
-
-                    {!railCollapsed && matchBadge !== null && (
-                      <span
-                        className="tabular-nums"
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          padding: '1px 6px',
-                          borderRadius: '9999px',
-                          backgroundColor: '#f0fdf4',
-                          color: '#166534',
-                          border: '1px solid #bbf7d0',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {matchBadge}
-                      </span>
-                    )}
+                    <Icon size={13} />
+                    <span>{tab.label}</span>
                   </button>
                 )
               })}
             </nav>
           </div>
-
-          {/* Bottom Language Switcher & Repo Links */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: railCollapsed
-                  ? 'repeat(2, minmax(0, 1fr))'
-                  : 'repeat(4, minmax(0, 1fr))',
-                gap: '2px',
-                padding: '3px',
-                backgroundColor: '#e2e8f0',
-                borderRadius: '8px',
-              }}
-            >
-              {(['ko', 'en', 'zh', 'ja'] as const).map((l) => (
-                <button
-                  key={l}
-                  type="button"
-                  data-testid={`lang-btn-${l}`}
-                  onClick={() => setLang(l)}
-                  style={{
-                    padding: '4px 0',
-                    fontSize: '11px',
-                    fontWeight: lang === l ? 700 : 600,
-                    backgroundColor: lang === l ? '#ffffff' : 'transparent',
-                    color: lang === l ? '#0f172a' : '#475569',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {l.toUpperCase()}
-                </button>
-              ))}
-            </div>
-
-            {!railCollapsed && (
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  fontSize: '11px',
-                  color: '#64748b',
-                  padding: '0 4px',
-                }}
-              >
-                <a
-                  href="https://github.com/epgeno/plasmid"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: '#64748b', fontWeight: 500 }}
-                >
-                  GitHub
-                </a>
-                <span>MIT / Apache-2.0</span>
-                <a
-                  href="https://plasmid.wiki"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: '#64748b', fontWeight: 500 }}
-                >
-                  plasmid.wiki
-                </a>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Mobile / Tablet Compact Header + Scrollable 7-Tab Strip (<1200px) */}
-        <div className="plasmid-mobile-only">
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: '8px',
-              paddingBottom: '6px',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-              <div
-                style={{
-                  width: '26px',
-                  height: '26px',
-                  backgroundColor: '#0f172a',
-                  borderRadius: '6px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <Cpu size={15} color="#ffffff" />
-              </div>
-              <span
-                style={{
-                  fontSize: '15px',
-                  fontWeight: 800,
-                  color: '#0f172a',
-                  letterSpacing: '-0.02em',
-                }}
-              >
-                {t.header.title}
-              </span>
-              <span
-                className="tabular-nums"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '3px',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  padding: '2px 6px',
-                  borderRadius: '9999px',
-                  backgroundColor: '#f0fdf4',
-                  color: '#166534',
-                  border: '1px solid #bbf7d0',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <ShieldCheck size={11} />
-                <span>0 B</span>
-              </span>
-            </div>
-
-            <div
-              style={{
-                display: 'inline-flex',
-                padding: '2px',
-                backgroundColor: '#f1f5f9',
-                borderRadius: '6px',
-                border: '1px solid #e2e8f0',
-                flexShrink: 0,
-              }}
-            >
-              {(['ko', 'en', 'zh', 'ja'] as const).map((l) => (
-                <button
-                  key={l}
-                  type="button"
-                  data-testid={`mobile-lang-btn-${l}`}
-                  onClick={() => setLang(l)}
-                  style={{
-                    padding: '3px 7px',
-                    fontSize: '11px',
-                    fontWeight: lang === l ? 700 : 600,
-                    backgroundColor: lang === l ? '#0f172a' : 'transparent',
-                    color: lang === l ? '#ffffff' : '#64748b',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {l.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <nav
-            aria-label={wt.navSectionLabel}
-            className="plasmid-scroll-strip"
-            style={{ gap: '4px', paddingBottom: '8px' }}
-          >
-            {tabs.map((tab) => {
-              const Icon = tab.icon
-              const active = activeTab === tab.id
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  data-testid={`mobile-nav-tab-${tab.id}`}
-                  onClick={() => setActiveTab(tab.id)}
-                  aria-current={active ? 'page' : undefined}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '5px 10px',
-                    fontSize: '12px',
-                    fontWeight: active ? 700 : 600,
-                    backgroundColor: active ? '#0f172a' : '#f8fafc',
-                    color: active ? '#ffffff' : '#475569',
-                    border: active ? '1px solid #0f172a' : '1px solid #e2e8f0',
-                    borderRadius: '9999px',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  <Icon size={13} />
-                  <span>{tab.label}</span>
-                </button>
-              )
-            })}
-          </nav>
-        </div>
+        )}
       </aside>
 
       {/* ===================================================================
@@ -1743,7 +1753,7 @@ export default function App() {
                               wordBreak: 'break-word',
                             }}
                           >
-                            {current.variant.clinvar}
+                            {localizeClinicalSignificance(current.variant.clinvar, lang)}
                           </span>
                         )}
                       </div>
@@ -2454,7 +2464,8 @@ export default function App() {
                           wordBreak: 'break-word',
                         }}
                       >
-                        {t.wiki.clinicalSignificance}: {current.variant.clinvar}
+                        {t.wiki.clinicalSignificance}:{' '}
+                        {localizeClinicalSignificance(current.variant.clinvar, lang)}
                       </span>
                     )}
                     <span
@@ -3545,7 +3556,7 @@ export default function App() {
                       wordBreak: 'break-word',
                     }}
                   >
-                    {current.variant.clinvar}
+                    {localizeClinicalSignificance(current.variant.clinvar, lang)}
                   </span>
                 )}
               </div>
