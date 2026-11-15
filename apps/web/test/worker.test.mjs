@@ -87,6 +87,17 @@ function createMockEnv(dataBytes) {
 
 test('resolveContentRange handles {offset, length}, open offset, and {suffix} with clamping', () => {
   assert.deepEqual(
+    resolveContentRange(1495757, { offset: 0, length: 128, suffix: undefined }, 'bytes=0-127'),
+    {
+      kind: 'partial',
+      start: 0,
+      end: 127,
+      length: 128,
+      header: 'bytes 0-127/1495757',
+    }
+  );
+
+  assert.deepEqual(
     resolveContentRange(147636, { offset: 0, length: 65536 }, 'bytes=0-65535'),
     {
       kind: 'partial',

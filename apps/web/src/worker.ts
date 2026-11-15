@@ -77,11 +77,12 @@ export function resolveContentRange(
     return { kind: 'unsatisfiable', header: unsatisfiedHeader };
   }
 
-  if ('suffix' in objectRange) {
-    if (objectRange.suffix <= 0) {
+  const rangeObj = objectRange as { offset?: number; length?: number; suffix?: number };
+  if (typeof rangeObj.suffix === 'number') {
+    if (!Number.isFinite(rangeObj.suffix) || rangeObj.suffix <= 0) {
       return { kind: 'unsatisfiable', header: unsatisfiedHeader };
     }
-    const length = Math.min(objectRange.suffix, objectSize);
+    const length = Math.min(rangeObj.suffix, objectSize);
     const start = objectSize - length;
     const end = objectSize - 1;
     return {
@@ -93,15 +94,15 @@ export function resolveContentRange(
     };
   }
 
-  const start = objectRange.offset ?? 0;
+  const start = rangeObj.offset ?? 0;
   if (start < 0 || start >= objectSize) {
     return { kind: 'unsatisfiable', header: unsatisfiedHeader };
   }
 
   const remaining = objectSize - start;
   const length =
-    objectRange.length !== undefined
-      ? Math.min(objectRange.length, remaining)
+    rangeObj.length !== undefined
+      ? Math.min(rangeObj.length, remaining)
       : remaining;
 
   if (length <= 0) {
